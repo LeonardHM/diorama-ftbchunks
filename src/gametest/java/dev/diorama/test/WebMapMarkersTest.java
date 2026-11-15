@@ -62,7 +62,7 @@ final class WebMapMarkersTest {
 			place(server, "minecraft:overworld", at[0] + 40, at[1], at[2] + 12, "Mine");
 			place(server, "minecraft:overworld", at[0] - 30, at[1], at[2] - 20, "Old camp");
 			place(server, "minecraft:the_end", 0, 80, 0, "Dragon");
-			String four = waitForText(context, http, port, "/markers.json", "\"name\":\"Dragon\"", 200);
+			String four = waitForText(context, http, port, "/markers.json", "\"name\":\"Dragon\"", 2400);
 			expect(wrong, four.contains(marker("Spawn Town", "minecraft:overworld", at[0], at[1], at[2])) && four.contains(marker("Mine", "minecraft:overworld", at[0] + 40, at[1], at[2] + 12))
 				&& four.contains(marker("Old camp", "minecraft:overworld", at[0] - 30, at[1], at[2] - 20)) && four.contains(marker("Dragon", "minecraft:the_end", 0, 80, 0)), "four markers placed, and markers.json is " + four);
 			String view = "#dim=minecraft:overworld&u=" + (at[0] + 10) + "&v=" + Math.round(at[2] * 0.866 - at[1] * 0.5) + "&s=5";
@@ -70,7 +70,7 @@ final class WebMapMarkersTest {
 
 			// Added again under its name, in another case: moved, not doubled. Then one taken off.
 			place(server, "minecraft:overworld", at[0] + 12, at[1], at[2] - 8, "spawn town");
-			String moved = waitForText(context, http, port, "/markers.json", marker("Spawn Town", "minecraft:overworld", at[0] + 12, at[1], at[2] - 8), 200);
+			String moved = waitForText(context, http, port, "/markers.json", marker("Spawn Town", "minecraft:overworld", at[0] + 12, at[1], at[2] - 8), 2400);
 			expect(wrong, count(moved, "pawn") == 1, "Spawn Town was added again to move it, and markers.json is " + moved);
 			server.command("diorama-web marker remove Old camp");
 			server.command("diorama-web marker remove Nowhere");
@@ -135,7 +135,7 @@ final class WebMapMarkersTest {
 		}
 	}
 
-	/** Waits until a path's text has {@code part} in it, and returns the text. */
+	/** Waits until a path's text has {@code part} in it, and returns the text. A test server can take half a minute to get to a console command while it saves. */
 	private static String waitForText(ClientGameTestContext context, HttpClient http, int port, String path, String part, int ticks) {
 		String[] text = {""};
 		int[] asked = {0};
@@ -157,7 +157,7 @@ final class WebMapMarkersTest {
 	private static void waitFor(ClientGameTestContext context, HttpClient http, int port, String part, boolean there, List<String> wrong) {
 		int[] asked = {0};
 		try {
-			context.waitFor(mc -> asked[0]++ % 10 == 0 && status(http, port, "/markers.json") == 200 && get(http, port, "/markers.json").contains(part) == there, 200);
+			context.waitFor(mc -> asked[0]++ % 10 == 0 && status(http, port, "/markers.json") == 200 && get(http, port, "/markers.json").contains(part) == there, 2400);
 		} catch (AssertionError e) {
 			wrong.add("markers.json " + (there ? "never had " : "still has ") + part + ": " + get(http, port, "/markers.json"));
 		}

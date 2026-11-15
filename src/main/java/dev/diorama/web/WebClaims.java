@@ -180,7 +180,9 @@ final class WebClaims {
 
 	/** Reads every claim the page may show. Server thread. */
 	private Read read() {
-		long start = System.nanoTime();
+		java.lang.management.ThreadMXBean threads = java.lang.management.ManagementFactory.getThreadMXBean();
+		boolean cpu = threads.isCurrentThreadCpuTimeSupported();
+		long start = cpu ? threads.getCurrentThreadCpuTime() : System.nanoTime();
 		Map<String, Boolean> shown = new HashMap<>();
 		for (ServerLevel level : this.server.getAllLevels()) {
 			shown.put(level.dimension().identifier().toString(), !this.leftOut.test(level));
@@ -195,7 +197,7 @@ final class WebClaims {
 				}
 			});
 		}
-		return new Read(dimensions, complete, System.nanoTime() - start);
+		return new Read(dimensions, complete, (cpu ? threads.getCurrentThreadCpuTime() : System.nanoTime()) - start);
 	}
 
 	private static long key(int x, int z) {
@@ -277,6 +279,8 @@ final class WebClaims {
 	private abstract static class Source {
 		private boolean looked;
 		private boolean failed;
+		/** Whether the mod throwing has been logged: once, then only at debug level. */
+		private boolean warned;
 
 		/** Hands every claim others may see to {@code found}; false when the mod can't say now. Server thread. */
 		final boolean read(MinecraftServer server, Found found) {
@@ -296,7 +300,12 @@ final class WebClaims {
 				return this.claims(server, found);
 			} catch (InvocationTargetException e) {
 				// The mod itself threw: tried again next time.
-				Diorama.LOGGER.debug("{} couldn't give its claims", this.name(), e);
+				if (!this.warned) {
+					this.warned = true;
+					Diorama.LOGGER.warn("{} couldn't give its land claims to the web map; trying again", this.name(), e.getCause());
+				} else {
+					Diorama.LOGGER.debug("{} couldn't give its land claims", this.name(), e.getCause());
+				}
 				return false;
 			} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
 				this.fail(e);
@@ -379,25 +388,29 @@ final class WebClaims {
 				return false;
 			}
 			Collection<?> chunks = (Collection<?>) this.allChunks.invoke(this.manager.invoke(this.api));
-			// A team's owner looked up once a read: a team owns many chunks.
-			Map<Object, Optional<Owner>> teams = new IdentityHashMap<>();
+			// Looked up once a read, not for each chunk: a team's owner, plain and force loaded (null
+			// when only its allies see its claims), and a dimension's name.
+			Map<Object, Owner[]> teams = new IdentityHashMap<>();
+			Map<Object, String> dimensions = new IdentityHashMap<>();
 			for (Object chunk : chunks) {
 				Object data = this.chunkTeamData.invoke(chunk);
-				Optional<Owner> owner = teams.get(data);
+				Owner[] owner = teams.get(data);
 				if (owner == null) {
-					owner = this.owner(data);
+					Optional<Owner> plain = this.owner(data);
+					owner = plain.map(o -> new Owner[] {o, new Owner(o.name(), o.rgb(), true, false)}).orElse(new Owner[0]);
 					teams.put(data, owner);
 				}
-				if (owner.isEmpty()) {
+				if (owner.length == 0) {
 					continue;
 				}
 				Object pos = this.chunkPos.invoke(chunk);
-				Owner claim = owner.get();
-				if ((boolean) this.chunkForceLoaded.invoke(chunk)) {
-					claim = new Owner(claim.name(), claim.rgb(), true, false);
+				Object key = this.posDimension.invoke(pos);
+				String dimension = dimensions.get(key);
+				if (dimension == null) {
+					dimension = ((net.minecraft.resources.ResourceKey<?>) key).identifier().toString();
+					dimensions.put(key, dimension);
 				}
-				found.claim(((net.minecraft.resources.ResourceKey<?>) this.posDimension.invoke(pos)).identifier().toString(),
-					(int) this.posX.invoke(pos), (int) this.posZ.invoke(pos), claim);
+				found.claim(dimension, (int) this.posX.invoke(pos), (int) this.posZ.invoke(pos), owner[(boolean) this.chunkForceLoaded.invoke(chunk) ? 1 : 0]);
 			}
 			return true;
 		}
@@ -429,7 +442,8 @@ final class WebClaims {
 		private Method claimsManager;
 		private Method localizer;
 		private Method localize;
-		private Method localizeKey;
+		/** The server's own wording of one of its texts, for older versions, whose localizer needs a player. */
+		private @Nullable Method defaultTranslation;
 		private Method dimensionStream;
 		private Method dimensionId;
 		private Method regionStream;
@@ -463,7 +477,11 @@ final class WebClaims {
 			this.localizer = api.getMethod("getAdaptiveTextLocalizer");
 			Class<?> localizerType = Class.forName(PAC + "common.server.player.localization.api.IAdaptiveLocalizerAPI");
 			this.localize = localizerType.getMethod("getFor", net.minecraft.server.level.ServerPlayer.class, Component.class);
-			this.localizeKey = localizerType.getMethod("getFor", net.minecraft.server.level.ServerPlayer.class, String.class, Object[].class);
+			try {
+				this.defaultTranslation = Class.forName(PAC + "common.server.player.localization.AdaptiveLocalizer").getMethod("getDefaultTranslation", String.class);
+			} catch (NoSuchMethodException e) {
+				this.defaultTranslation = null;
+			}
 			Class<?> manager = Class.forName(PAC + "common.server.claims.api.IServerClaimsManagerAPI");
 			Class<?> claim = Class.forName(PAC + "common.claims.player.api.IPlayerChunkClaimAPI");
 			this.dimensionStream = manager.getMethod("getDimensionStream");
@@ -569,8 +587,12 @@ final class WebClaims {
 			return new Owner(title, (own != null ? own : (int) this.claimsColour.invoke(info)) & 0xFFFFFF, forceloadable, true);
 		}
 
+		/** One of its texts in the server's own language, as it words them for players without the mod. */
 		private Component text(Object localizer, String key, Object... args) throws ReflectiveOperationException {
-			return (Component) this.localizeKey.invoke(localizer, null, key, args);
+			// A key the game doesn't know is its own wording: the default translation is the wording.
+			String wording = this.defaultTranslation != null && this.defaultTranslation.getDeclaringClass().isInstance(localizer)
+				? (String) this.defaultTranslation.invoke(localizer, key) : key;
+			return Component.translatable(wording, args);
 		}
 	}
 }

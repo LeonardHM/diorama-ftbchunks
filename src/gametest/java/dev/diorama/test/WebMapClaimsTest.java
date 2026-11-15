@@ -207,12 +207,15 @@ final class WebMapClaimsTest {
 				// What reading many claims costs the server thread: a server team's 4,096 chunks far off.
 				server.command("ftbchunks admin claim_as " + team + " 512 " + (hill[0] * 16 - 2000) + " " + (hill[1] * 16));
 				waitForListed(context, http, port, key(hill[0] - 125, hill[1]), "FTB Chunks: 4,096 chunks claimed far off");
-				context.waitTicks(100);
-				server.command("diorama-web status");
-				context.waitTicks(20);
-				String console = server.console();
-				int said = console.lastIndexOf("Web map: ");
-				dev.diorama.Diorama.LOGGER.info("web-map-claims: with 4,096 more claimed chunks the server says {}", said < 0 ? "nothing" : console.substring(said, console.indexOf('\n', said)));
+				// A few reads, the first ones with the code still cold.
+				for (int i = 0; i < 8; i++) {
+					context.waitTicks(i < 4 ? 80 : 300);
+					server.command("diorama-web status");
+					context.waitTicks(20);
+					String console = server.console();
+					int said = console.lastIndexOf("Web map: ");
+					dev.diorama.Diorama.LOGGER.info("web-map-claims: with 4,096 more claimed chunks the server says {}", said < 0 ? "nothing" : console.substring(said, console.indexOf('\n', said)));
+				}
 				server.command("ftbchunks admin unclaim_as " + team + " 512 " + (hill[0] * 16 - 2000) + " " + (hill[1] * 16));
 				waitForNo(context, http, port, key(hill[0] - 125, hill[1]), wrong, "FTB Chunks: the 4,096 chunks unclaimed");
 			}

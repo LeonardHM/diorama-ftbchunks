@@ -345,6 +345,8 @@
 	"diorama.radar_mobs.search": "Search mobs",
 	"diorama.settings.arrow_color": "Arrow colour",
 	"diorama.settings.arrow_color.tooltip": "The colour of your own arrow on the minimap and the map.",
+	"diorama.settings.arrow_size": "Arrow size",
+	"diorama.settings.arrow_size.tooltip": "How big your own arrow is on the minimap and the map.",
 	"diorama.settings.arrow_color.blue": "Blue",
 	"diorama.settings.arrow_color.red": "Red",
 	"diorama.settings.arrow_color.green": "Green",

@@ -269,7 +269,7 @@ public final class MinimapHud implements HudElement {
 			WaypointOverlay.draw(graphics, view, WaypointOverlay.layout(view, near, false), false, null);
 		}
 		Radar.draw(graphics, view, blips, false, true);
-		Markers.player(graphics, x + size / 2.0F, y + size / 2.0F, Markers.onMap(viewer.getViewYRot(partialTick)), 5);
+		Markers.player(graphics, x + size / 2.0F, y + size / 2.0F, Markers.onMap(viewer.getViewYRot(partialTick)), 5 * settings.arrowScale());
 		if (settings.compass) {
 			this.compass(graphics, font, x, y, size, text);
 		}

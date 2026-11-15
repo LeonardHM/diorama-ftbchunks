@@ -343,6 +343,8 @@
     "diorama.radar_mobs.search": "Поиск мобов",
     "diorama.settings.arrow_color": "Цвет стрелки",
     "diorama.settings.arrow_color.tooltip": "Цвет вашей собственной стрелки на мини-карте и карте.",
+    "diorama.settings.arrow_size": "Размер стрелки",
+    "diorama.settings.arrow_size.tooltip": "Размер вашей собственной стрелки на мини-карте и карте.",
     "diorama.settings.arrow_color.blue": "Синий",
     "diorama.settings.arrow_color.red": "Красный",
     "diorama.settings.arrow_color.green": "Зеленый",

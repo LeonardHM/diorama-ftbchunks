@@ -705,7 +705,8 @@ def main():
     parser.add_argument('--env', action='append', default=[], help='extra KEY=VALUE for the game, e.g. DIORAMA_GIF=1')
     parser.add_argument('--mods', default='',
                         help="other mods' release jars to run with, comma-separated: a list in mods/ by name "
-                             '(opac, minecolonies), a folder of jars, a jar or a URL. See SKILL.md')
+                             '(opac, minecolonies), a folder of jars, a jar or a URL; with DIORAMA_REAL_SERVER=1 on the '
+                             'real server too. See SKILL.md')
     parser.add_argument('--keep', action='store_true', help='stop the VM instead of deleting it, to look around after')
     parser.add_argument('--snapshot', help='saved snapshot to start from (default: the newest diorama-gametest-*)')
     parser.add_argument('--warm-minutes', type=int,
@@ -723,8 +724,6 @@ def main():
         sys.exit(f'no node versions/{", ".join(missing)}')
     items = [m for m in args.mods.split(',') if m]
     args.mods = {n: mods_for(n, items) for n in nodes} if items else {}
-    if args.mods and any(e.startswith('DIORAMA_REAL_SERVER=') for e in args.env):
-        sys.exit('--mods only installs the mods in the client: the real server would run without them')
     if args.warm_minutes is None:
         args.warm_minutes = WARM_MINUTES if len(nodes) <= WARM_NODES else 0
     global CHECKOUT

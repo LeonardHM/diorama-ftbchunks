@@ -27,12 +27,23 @@ All in `config/diorama-server.properties`:
 | `web-map-port` | The port of Diorama's own small web server. `0` turns it off, for when you serve the files yourself. Default 8100. |
 | `web-map-address` | The address it listens on. Empty for every address; `127.0.0.1` to only reach it through a web server of your own on the same machine. |
 | `web-map-folder` | Where the map's files go. Empty: `diorama-web` in the world folder. |
+| `web-map-players` | `true` to show where online players are, with their names. `false` for a map with no players on it. Default `true`. |
 | `share-land` | Which land the map shows, the same as the shared map: `visited` (land players have spent time near, as the game counts it in every chunk) or `generated` (every finished chunk, for worlds pre-generated with Chunky). |
 
 The web map follows the server's other map settings in the same file, so it shows no more than the map in the game does:
 
 - A dimension in `map-off-dimensions` isn't drawn, and the pictures it had are deleted.
 - With `cave-maps-allowed=false` or `cave-fog-of-war=true`, the Nether (any dimension under a roof) is left out the same way. There the map in the game shows only what each player has seen, and a page anyone can open can't know that.
+
+- With `radar-allowed=false`, where no map in the game shows players, the page shows none either.
+
+## Players
+
+The page shows everyone online as an arrow with their name, pointing where they look, and lists them under a button at the top; picking a name moves the map to them. It asks the server once a second.
+
+Not shown: anyone sneaking, invisible or in spectator mode, and anyone in a dimension the map leaves out. Sneaking is how a player takes themselves off the page.
+
+`web-map-players=false` turns it off, and deletes the file that said where players were.
 
 These are read when the server starts. A dimension allowed again is drawn whole again. If you serve the folder with a web server of your own, the old pictures stay reachable until the Minecraft server has started and deleted them.
 

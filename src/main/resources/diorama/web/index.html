@@ -30,6 +30,12 @@
 	.dims button + button { border-left: 1px solid var(--line); }
 	.follow { padding: 8px 12px; color: var(--muted); }
 	.follow.on { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+	.people { position: relative; }
+	.people > button { padding: 8px 12px; color: var(--muted); }
+	.people ul { position: absolute; top: 100%; left: -1px; margin: 6px 0 0; padding: 4px 0; list-style: none; min-width: 100%; max-height: 60vh; overflow-y: auto; }
+	.people li button { display: block; width: 100%; padding: 6px 12px; text-align: left; white-space: nowrap; }
+	.people li button:hover { background: rgba(255, 255, 255, 0.08); }
+	.people li small { color: var(--muted); margin-left: 8px; }
 	.where { position: fixed; left: 12px; bottom: 12px; padding: 8px 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 	.empty { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); padding: 24px; text-align: center; }
 	button:focus-visible { outline: 2px solid #7aa7ff; outline-offset: -2px; }
@@ -37,7 +43,7 @@
 </head>
 <body>
 <canvas id="map" aria-label="Map"></canvas>
-<div class="bar"><div class="dims panel" id="dims"></div><button class="follow panel on" id="follow" hidden aria-pressed="true" title="Keep the map centred on you. Turns off when you move the map.">Follow</button></div>
+<div class="bar"><div class="dims panel" id="dims"></div><button class="follow panel on" id="follow" hidden aria-pressed="true" title="Keep the map centred on you. Turns off when you move the map.">Follow</button><div class="people panel" id="people" hidden><button id="peopleButton" aria-expanded="false"></button><ul class="panel" id="peopleList" hidden></ul></div></div>
 <div class="zoom panel"><button id="in" aria-label="Zoom in">+</button><button id="out" aria-label="Zoom out">&minus;</button></div>
 <div class="where panel" id="where" hidden></div>
 <div class="empty" id="empty"></div>
@@ -55,6 +61,8 @@ let view = { u: 0, v: 0, scale: 1 };
 // The player's own map, served by their game (map.live): where they are, and whether the view stays on them.
 let player = null;       // player.json, or null when the game isn't in a world
 let follow = true;
+// The server's map, when it shows them (map.players): everyone online it doesn't leave out, from players.json.
+let players = [];
 
 function tileUnits(z) { return map.tileUnits * (1 << z); }
 
@@ -66,6 +74,7 @@ function load(first) {
 		pick(map.dimensions.find(d => d.id === wanted) || map.dimensions[0], first);
 		buildDims();
 		if (map.live && !wasLive) startPlayer();
+		if (!map.live && map.players && !asking) startPlayers();
 	}).catch(() => {}).finally(() => { clearTimeout(loadTimer); loadTimer = setTimeout(() => load(false), map && map.live ? 3000 : 30000); });
 }
 let loadTimer = 0;
@@ -100,6 +109,52 @@ function showPlayerWhere() {
 	where.hidden = false;
 	where.textContent = "X " + Math.floor(player.x) + "   Y " + Math.floor(player.y) + "   Z " + Math.floor(player.z);
 }
+
+// Everyone on the server's map, asked for every second while the page shows.
+let asking = false;
+function startPlayers() {
+	asking = true;
+	const ask = () => {
+		if (!map.players) { asking = false; showPlayers([]); return; }
+		if (document.hidden) { setTimeout(ask, 1000); return; }
+		fetch("players.json", { cache: "no-store" }).then(r => r.ok ? r.json() : { players: [] }).then(json => showPlayers(Array.isArray(json.players) ? json.players : []))
+			.catch(() => showPlayers([])).finally(() => setTimeout(ask, 1000));
+	};
+	ask();
+}
+function showPlayers(list) {
+	const changed = JSON.stringify(list) !== JSON.stringify(players);
+	players = list;
+	const box = document.getElementById("people"), button = document.getElementById("peopleButton"), ul = document.getElementById("peopleList");
+	box.hidden = !map.players;
+	button.textContent = players.length === 1 ? "1 player" : players.length + " players";
+	if (!players.length) { ul.hidden = true; button.setAttribute("aria-expanded", "false"); }
+	if (!changed) return;
+	ul.innerHTML = "";
+	for (const p of players) {
+		const li = document.createElement("li"), b = document.createElement("button"), place = document.createElement("small");
+		b.textContent = p.name;
+		place.textContent = (dim && p.dimension !== dim.id ? nameOf(p.dimension) + "  " : "") + p.x + ", " + p.y + ", " + p.z;
+		b.appendChild(place);
+		// To where they are, in their dimension if the map has it.
+		b.onclick = () => {
+			const d = map.dimensions.find(d => d.id === p.dimension);
+			if (!d) return;
+			if (!dim || dim.id !== d.id) { pick(d, false); buildDims(); }
+			view.u = p.u; view.v = p.v;
+			view.scale = Math.max(view.scale, 2);
+			draw(); saveHash();
+		};
+		li.appendChild(b);
+		ul.appendChild(li);
+	}
+	draw();
+}
+document.getElementById("peopleButton").onclick = () => {
+	const ul = document.getElementById("peopleList");
+	ul.hidden = !ul.hidden || !players.length;
+	document.getElementById("peopleButton").setAttribute("aria-expanded", ul.hidden ? "false" : "true");
+};
 
 function pick(d, first) {
 	const switched = !dim || !d || dim.id !== d.id;
@@ -302,13 +357,29 @@ function paint() {
 		}
 	}
 	fillState = { wanted: sharp.length, loaded, any };
-	if (player && player.dimension === dim.id) drawPlayer(sx(player.u), sy(player.v), dpr);
+	for (const p of players) if (p.dimension === dim.id) drawPlayer(sx(p.u), sy(p.v), dpr, p, p.name);
+	if (player && player.dimension === dim.id) drawPlayer(sx(player.u), sy(player.v), dpr, player, null);
 }
 
 // The player's arrow, as the map in the game draws it: pointing where they look, in their colour.
-function drawPlayer(x, y, dpr) {
+function drawPlayer(x, y, dpr, player, name) {
 	ctx.save();
 	ctx.translate(x, y);
+	if (name) {
+		// Their name under the arrow, readable over any land.
+		ctx.save();
+		ctx.scale(dpr, dpr);
+		ctx.font = "600 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		ctx.lineJoin = "round";
+		ctx.lineWidth = 4;
+		ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+		ctx.strokeText(name, 0, 14);
+		ctx.fillStyle = "#ffffff";
+		ctx.fillText(name, 0, 14);
+		ctx.restore();
+	}
 	ctx.rotate(player.heading);
 	ctx.scale(dpr, dpr);
 	ctx.beginPath();

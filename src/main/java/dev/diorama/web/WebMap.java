@@ -110,8 +110,9 @@ public final class WebMap {
 		this.table = table;
 		this.modsFolder = modsFolder;
 		this.folder = settings.folder() != null ? settings.folder() : server.getWorldPath(LevelResource.ROOT).resolve("diorama-web");
-		// Where the server lets no map in the game show players, the page shows none either.
-		this.players = settings.players() && ShareServer.locks(server).radarAllowed() ? new WebPlayers(server, this.folder, this::leftOut) : null;
+		// Where the server lets no map in the game show players, the page shows none either. Players
+		// come from the map's own web server, so there are none to show without it.
+		this.players = settings.players() && settings.port() > 0 && ShareServer.locks(server).radarAllowed() ? new WebPlayers(server, this::leftOut) : null;
 		this.thread = new Thread(this::run, "Diorama web map");
 		this.thread.setDaemon(true);
 		this.thread.setPriority(Thread.MIN_PRIORITY);
@@ -167,8 +168,6 @@ public final class WebMap {
 		}
 		if (this.players != null) {
 			this.players.start();
-		} else {
-			WebPlayers.remove(this.folder);
 		}
 		this.thread.start();
 		Diorama.LOGGER.info("Diorama's web map is drawing into {}", this.folder);
@@ -323,7 +322,7 @@ public final class WebMap {
 			}
 			this.writeMapJson();
 			if (this.settings.port() > 0 && !this.stopping) {
-				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains);
+				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains, this.players == null ? null : this.players::json);
 				if (this.stopping) {
 					// The server stopped while the pictures were being deleted, and has looked for this already.
 					WebServer late = this.http;

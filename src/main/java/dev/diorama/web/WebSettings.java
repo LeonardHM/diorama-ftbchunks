@@ -95,7 +95,9 @@ public record WebSettings(boolean enabled, int port, String address, @Nullable P
 		{"web-map-players", """
 			# true: the web map shows where online players are, with their names. Anyone sneaking,
 			# invisible or spectating isn't shown, and no one is while radar-allowed is false.
-			# false: the web map shows no players.
+			# false: the web map shows no players. Players come from the web map's own web server
+			# (web-map-port), never from a file; behind a web server of your own, pass /players.json
+			# on to that port.
 			""", "true"},
 	};
 }

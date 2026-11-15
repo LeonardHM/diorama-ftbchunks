@@ -75,6 +75,8 @@ function load(first) {
 		buildDims();
 		if (map.live && !wasLive) startPlayer();
 		if (!map.live && map.players && !asking) startPlayers();
+		// Turned off since: gone now, not at the next answer.
+		if (!map.players && players.length) showPlayers([]);
 	}).catch(() => {}).finally(() => { clearTimeout(loadTimer); loadTimer = setTimeout(() => load(false), map && map.live ? 3000 : 30000); });
 }
 let loadTimer = 0;
@@ -117,8 +119,11 @@ function startPlayers() {
 	const ask = () => {
 		if (!map.players) { asking = false; showPlayers([]); return; }
 		if (document.hidden) { setTimeout(ask, 1000); return; }
-		fetch("players.json", { cache: "no-store" }).then(r => r.ok ? r.json() : { players: [] }).then(json => showPlayers(Array.isArray(json.players) ? json.players : []))
-			.catch(() => showPlayers([])).finally(() => setTimeout(ask, 1000));
+		// An answer that doesn't come counts as none: nobody stays on the map from an old one.
+		const gaveUp = new AbortController(), timer = setTimeout(() => gaveUp.abort(), 5000);
+		fetch("players.json", { cache: "no-store", signal: gaveUp.signal }).then(r => r.ok ? r.json() : { players: [] })
+			.then(json => showPlayers(map.players && Array.isArray(json.players) ? json.players : []))
+			.catch(() => showPlayers([])).finally(() => { clearTimeout(timer); setTimeout(ask, 1000); });
 	};
 	ask();
 }

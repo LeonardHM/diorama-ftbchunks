@@ -19,8 +19,9 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
  * The players on the server's web map (opt-in: {@code web-map-players}, on a real server:
  * {@code --env DIORAMA_REAL_SERVER=1}). Two players are online, one of them a vanilla client: the
  * page's {@code players.json} names both where they stand, and stops naming the one who becomes
- * invisible, a spectator, or leaves. With {@code web-map-players=false} or {@code
- * radar-allowed=false} the server writes no such file and deletes the one it had. Photographs the
+ * invisible, a spectator, sneaking, or leaves, while still naming the other. It is answered from
+ * memory, and no file in the map's folder says where players are. With {@code
+ * web-map-players=false} or {@code radar-allowed=false} nothing answers at that address. Photographs the
  * page into {@code screenshots/web-map-players/}.
  */
 final class WebMapPlayersTest {
@@ -87,17 +88,25 @@ final class WebMapPlayersTest {
 			// Invisible, then a spectator: off the page each time, and back after.
 			server.command("effect give " + OTHER + " minecraft:invisibility 600 0 true");
 			waitForNo(context, http, port, OTHER, "invisible", wrong);
+			expect(wrong, get(http, port, "/players.json").contains("\"name\":\"" + me + "\""), "with " + OTHER + " invisible, " + me + " is off the page too: " + get(http, port, "/players.json"));
 			ClientWebMapTest.photograph(page + view, out.resolve("3-one-invisible.png"));
 			server.command("effect clear " + OTHER);
 			waitForText(context, http, port, "/players.json", "\"name\":\"" + OTHER + "\"", 400);
 			server.command("gamemode spectator " + OTHER);
 			waitForNo(context, http, port, OTHER, "a spectator", wrong);
+			expect(wrong, get(http, port, "/players.json").contains("\"name\":\"" + me + "\""), "with " + OTHER + " spectating, " + me + " is off the page too: " + get(http, port, "/players.json"));
 			server.command("gamemode creative " + OTHER);
 			waitForText(context, http, port, "/players.json", "\"name\":\"" + OTHER + "\"", 400);
 			// Sneaking, by the player's own key.
-			context.getInput().holdKey(options -> options.keyShift);
+			net.minecraft.client.KeyMapping sneak = context.computeOnClient(mc -> mc.options.keyShift);
+			context.getInput().holdKey(sneak);
 			waitForNo(context, http, port, me, "sneaking", wrong);
-			context.getInput().releaseKey(options -> options.keyShift);
+			expect(wrong, get(http, port, "/players.json").contains("\"name\":\"" + OTHER + "\""), "with " + me + " sneaking, " + OTHER + " is off the page too: " + get(http, port, "/players.json"));
+			// Nothing about players is ever a file in the map's folder.
+			Path folder = Path.of(System.getProperty("user.home"), "real-servers", System.getenv("DIORAMA_NODE"), "world", "diorama-web");
+			expect(wrong, Files.isRegularFile(folder.resolve("map.json")), "the web map's folder isn't " + folder);
+			expect(wrong, !Files.exists(folder.resolve("players.json")) && !Files.exists(folder.resolve("players.json.part")), "the web map wrote where players are into " + folder);
+			context.getInput().releaseKey(sneak);
 			waitForText(context, http, port, "/players.json", "\"name\":\"" + me + "\"", 400);
 			// Gone from the server, gone from the page.
 			server.vanillaPlayerLeaves(OTHER);

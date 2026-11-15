@@ -31,12 +31,13 @@ final class WebServer {
 
 	/**
 	 * Starts serving {@code folder}, or returns null (logged) if the port can't be had. Nothing is
-	 * served from a folder in it whose name, in lower case, {@code closed} says yes to.
+	 * served from a folder in it whose name, in lower case, {@code closed} says yes to. Where players
+	 * are comes from {@code players}, never from a file; with none, nothing answers at that address.
 	 */
-	static @Nullable WebServer start(Path folder, String address, int port, java.util.function.Predicate<String> closed) {
+	static @Nullable WebServer start(Path folder, String address, int port, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players) {
 		try {
 			Path root = folder.toAbsolutePath().normalize();
-			return start(address, port, exchange -> serve(root, closed, exchange));
+			return start(address, port, exchange -> serve(root, closed, players, exchange));
 		} catch (IOException | RuntimeException e) {
 			Diorama.LOGGER.warn("Diorama's web map can't serve on port {} ({}); set web-map-port to a free one, or 0 to serve the folder yourself", port, e.toString());
 			return null;
@@ -75,7 +76,7 @@ final class WebServer {
 		this.workers.shutdownNow();
 	}
 
-	private static void serve(Path root, java.util.function.Predicate<String> closed, HttpExchange exchange) throws IOException {
+	private static void serve(Path root, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players, HttpExchange exchange) throws IOException {
 		try {
 			String method = exchange.getRequestMethod();
 			if (!method.equals("GET") && !method.equals("HEAD")) {
@@ -85,6 +86,16 @@ final class WebServer {
 			String path = exchange.getRequestURI().getPath();
 			if (path.equals("/") || path.isEmpty()) {
 				path = "/index.html";
+			}
+			if (path.equals(WebPlayers.PATH)) {
+				// Before any file: a file of that name in the folder is never read.
+				if (players == null) {
+					send(exchange, 404, "text/plain", null);
+				} else {
+					exchange.getResponseHeaders().set("Cache-Control", "no-store");
+					send(exchange, 200, "application/json", method.equals("HEAD") ? null : players.get().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+				}
+				return;
 			}
 			Path file = root.resolve(path.substring(1)).normalize();
 			// Only what's in the folder, and only the page, its map file and the pictures.

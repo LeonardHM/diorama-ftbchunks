@@ -43,7 +43,9 @@ The page shows everyone online as an arrow with their name, pointing where they 
 
 Not shown: anyone sneaking, invisible or in spectator mode, and anyone in a dimension the map leaves out. Sneaking is how a player takes themselves off the page.
 
-`web-map-players=false` turns it off, and deletes the file that said where players were.
+`web-map-players=false` turns it off.
+
+Where players are is never written to the map's folder: Diorama's own web server answers `players.json` from memory, so nothing is left behind when the server stops or crashes, or when you turn players off. If you serve the folder yourself, the page shows players only when your web server passes that one address on to Diorama's (see below); with `web-map-port=0` it shows none.
 
 These are read when the server starts. A dimension allowed again is drawn whole again. If you serve the folder with a web server of your own, the old pictures stay reachable until the Minecraft server has started and deleted them.
 
@@ -54,6 +56,14 @@ The folder is a plain static site: `index.html`, `map.json` and the pictures, on
 ```nginx
 location /map/ {
     alias /srv/minecraft/world/diorama-web/;
+}
+```
+
+To have players on a page you serve yourself, keep Diorama's web server on for them alone (`web-map-port=8100`, `web-map-address=127.0.0.1`) and pass the one address on:
+
+```nginx
+location = /map/players.json {
+    proxy_pass http://127.0.0.1:8100/players.json;
 }
 ```
 

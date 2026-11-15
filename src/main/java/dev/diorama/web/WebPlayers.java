@@ -3,11 +3,6 @@ package dev.diorama.web;
 import dev.diorama.Diorama;
 import dev.diorama.Facing;
 import dev.diorama.Projection;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -23,28 +18,35 @@ import net.minecraft.server.level.ServerPlayer;
 
 /**
  * The players on the server's web map, as BlueMap, Dynmap and squaremap show theirs: once a
- * second, who is online and where, written to {@code players.json} beside the map's pictures, so
- * the page shows them whether Diorama's own web server or the owner's serves the folder.
+ * second, who is online and where, for the map's own web server to answer {@code /players.json}
+ * with.
+ *
+ * <p>Where players are is only ever held in memory, as BlueMap holds its live data, and never
+ * written beside the map's pictures: a file would go on saying where they were after a crash,
+ * after the owner turned players off, or from a folder another web server still serves. So the
+ * page has players only through Diorama's own web server (or a proxy to it), and it has none the
+ * moment the server process is gone.
  *
  * <p>Left out, so the page says no more than a player near them in the game could see: anyone
  * sneaking (the game hides their name behind blocks then, and it's how a player takes themselves
  * off the page), invisible or spectating, and anyone in a dimension the map leaves out.
  */
 final class WebPlayers {
-	static final String FILE = "players.json";
-	private static final String NONE = "{\"players\":[]}";
+	static final String PATH = "/players.json";
+	static final String NONE = "{\"players\":[]}";
 	private static final long EVERY_MS = 1000;
+	/** An answer older than this says nothing: the server has stopped answering, and its players may be anywhere by now. */
+	private static final long STALE_MS = 15_000;
 
 	private final MinecraftServer server;
-	private final Path folder;
 	private final Predicate<ServerLevel> leftOut;
 	private final Thread thread;
 	private volatile boolean stopping;
-	private boolean warned;
+	private volatile String json = NONE;
+	private volatile long answered;
 
-	WebPlayers(MinecraftServer server, Path folder, Predicate<ServerLevel> leftOut) {
+	WebPlayers(MinecraftServer server, Predicate<ServerLevel> leftOut) {
 		this.server = server;
-		this.folder = folder;
 		this.leftOut = leftOut;
 		this.thread = new Thread(this::run, "Diorama web map players");
 		this.thread.setDaemon(true);
@@ -54,54 +56,50 @@ final class WebPlayers {
 		this.thread.start();
 	}
 
-	/** Stops, leaving a file that names no one: a page served from the folder shows nobody while the server is down. */
 	void stop() {
 		this.stopping = true;
+		this.json = NONE;
 		this.thread.interrupt();
-		try {
-			this.thread.join(5_000);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
-		this.write(NONE);
 	}
 
-	/** Takes away the file a web map with players on it left, now that they're off it. */
-	static void remove(Path folder) {
-		try {
-			Files.deleteIfExists(folder.resolve(FILE));
-		} catch (IOException e) {
-			Diorama.LOGGER.warn("Couldn't delete {} from the web map's folder, which still says where players were; delete it yourself", FILE, e);
-		}
+	/** What the page gets now: who it shows, or no one while the server isn't answering. */
+	String json() {
+		return this.stopping || System.currentTimeMillis() - this.answered > STALE_MS ? NONE : this.json;
 	}
 
 	private void run() {
-		// Before the first look: no one from the last time the server ran.
-		String written = NONE;
-		this.write(NONE);
+		boolean warned = false;
+		// The look still waiting for the server thread, if it's behind: one at a time, never a queue of them.
+		CompletableFuture<String> asked = null;
 		while (!this.stopping) {
 			try {
 				Thread.sleep(EVERY_MS);
-				// Entities are the server thread's; it answers between ticks.
-				CompletableFuture<String> asked = new CompletableFuture<>();
-				this.server.execute(() -> {
-					try {
-						asked.complete(this.collect());
-					} catch (RuntimeException e) {
-						asked.completeExceptionally(e);
-					}
-				});
-				String now = asked.get(10, TimeUnit.SECONDS);
-				if (!now.equals(written) && !this.stopping && this.write(now)) {
-					written = now;
+				if (asked == null) {
+					// Entities are the server thread's; it answers between ticks.
+					CompletableFuture<String> look = new CompletableFuture<>();
+					asked = look;
+					this.server.execute(() -> {
+						try {
+							look.complete(this.collect());
+						} catch (RuntimeException e) {
+							look.completeExceptionally(e);
+						}
+					});
+				}
+				String now = asked.get(EVERY_MS, TimeUnit.MILLISECONDS);
+				asked = null;
+				if (!this.stopping) {
+					this.json = now;
+					this.answered = System.currentTimeMillis();
 				}
 			} catch (InterruptedException e) {
 				return;
 			} catch (TimeoutException e) {
-				// A server too far behind to answer: the page keeps what it has until it does.
+				// A server too far behind to answer: asked again for the same look next time.
 			} catch (ExecutionException e) {
-				if (!this.warned) {
-					this.warned = true;
+				asked = null;
+				if (!warned) {
+					warned = true;
 					Diorama.LOGGER.warn("The web map couldn't read where players are", e.getCause());
 				}
 			}
@@ -117,7 +115,6 @@ final class WebPlayers {
 				shown.add(player);
 			}
 		}
-		// By name, so the file only changes when someone moves.
 		shown.sort(Comparator.comparing(ServerPlayer::getScoreboardName));
 		Facing facing = Projection.facing();
 		StringBuilder json = new StringBuilder("{\"players\":[");
@@ -135,22 +132,6 @@ final class WebPlayers {
 				Projection.u(player.getX(), player.getZ()), Projection.v(player.getX(), player.getY(), player.getZ()), heading));
 		}
 		return json.append("]}").toString();
-	}
-
-	private boolean write(String json) {
-		Path file = this.folder.resolve(FILE);
-		Path part = this.folder.resolve(FILE + ".part");
-		try {
-			Files.writeString(part, json, StandardCharsets.UTF_8);
-			Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-			return true;
-		} catch (IOException e) {
-			if (!this.warned) {
-				this.warned = true;
-				Diorama.LOGGER.warn("Couldn't write the web map's {}; the page shows no players until it can", FILE, e);
-			}
-			return false;
-		}
 	}
 
 	private static String escape(String text) {

@@ -27,6 +27,8 @@ import org.jspecify.annotations.Nullable;
  */
 final class WebMarkers {
 	static final String FILE = "markers.json";
+	/** The server's own copy, in the world folder. */
+	static final String STORE = "diorama-web-markers.json";
 	static final int MOST = 500;
 	static final int LONGEST_NAME = 48;
 
@@ -59,6 +61,13 @@ final class WebMarkers {
 
 	/** The store couldn't be read: nothing is written over it. */
 	private boolean unreadable;
+	/** Whether the page's file is what {@link #publish} last meant it to be; the map's web server serves it only then. */
+	private volatile boolean published;
+
+	/** Whether the page's file holds what it should: false before the first {@link #publish}, and after one that couldn't write it. */
+	boolean published() {
+		return this.published;
+	}
 
 	synchronized List<Marker> all() {
 		return List.copyOf(this.markers);
@@ -79,7 +88,10 @@ final class WebMarkers {
 		return null;
 	}
 
-	/** Places a marker, moving the one of that name if there is one. False if it couldn't be saved; nothing changes then. */
+	/**
+	 * Places a marker, moving the one of that name if there is one. False if it couldn't be saved;
+	 * nothing changes then. Saved, the page's file may still not have been written: {@link #published}.
+	 */
 	synchronized boolean put(Marker marker, Predicate<String> leftOut) {
 		List<Marker> before = List.copyOf(this.markers);
 		this.markers.removeIf(m -> m.name().equalsIgnoreCase(marker.name()));
@@ -107,13 +119,27 @@ final class WebMarkers {
 		return true;
 	}
 
-	/** Writes what the page reads: every marker but those in a dimension {@code leftOut} says yes to. */
+	/**
+	 * Writes what the page reads: every marker but those in a dimension {@code leftOut} says yes to.
+	 * If it can't be written, the file from before may name a marker that should be gone (removed,
+	 * or in a dimension turned off since): it's deleted if it can be, and not served either way.
+	 */
 	synchronized void publish(Predicate<String> leftOut) {
 		List<Marker> shown = this.markers.stream().filter(marker -> !leftOut.test(marker.dimension())).toList();
+		Path file = this.folder.resolve(FILE);
 		try {
-			write(this.folder.resolve(FILE), shown);
+			write(file, shown);
+			this.published = true;
 		} catch (IOException e) {
-			Diorama.LOGGER.warn("Couldn't write the web map's {}; the page shows the markers it had", FILE, e);
+			this.published = false;
+			boolean gone = false;
+			try {
+				Files.deleteIfExists(file);
+				gone = true;
+			} catch (IOException ignored) {
+			}
+			Diorama.LOGGER.warn("Couldn't write the web map's {}, so the page shows no markers until it can be written. {}", FILE,
+				gone ? "The one from before is deleted." : "The one from before couldn't be deleted either: Diorama's own web server doesn't serve it, but a web server of your own still would, so delete " + file + " yourself.", e);
 		}
 	}
 

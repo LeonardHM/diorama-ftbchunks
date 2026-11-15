@@ -99,6 +99,10 @@ public final class WebMapCommand {
 			context.getSource().sendFailure(Component.literal("Couldn't save the web map's markers; see the server log"));
 			return 0;
 		}
+		if (!map.markers.published()) {
+			context.getSource().sendFailure(Component.literal("Saved " + marker.name() + ", but the page's markers file couldn't be written, so the page shows no markers for now; see the server log"));
+			return 0;
+		}
 		context.getSource().sendSuccess(() -> Component.literal((before == null ? "Marked " : "Moved ") + marker.name() + " on the web map at " + at.getX() + ", " + at.getY() + ", " + at.getZ()), true);
 		return 1;
 	}
@@ -116,6 +120,10 @@ public final class WebMapCommand {
 		}
 		if (!map.markers.remove(marker, map::leftOut)) {
 			context.getSource().sendFailure(Component.literal("Couldn't save the web map's markers; see the server log"));
+			return 0;
+		}
+		if (!map.markers.published()) {
+			context.getSource().sendFailure(Component.literal("Removed " + marker.name() + ", but the page's markers file couldn't be written, so the page shows no markers for now; see the server log"));
 			return 0;
 		}
 		context.getSource().sendSuccess(() -> Component.literal("Took " + marker.name() + " off the web map"), true);

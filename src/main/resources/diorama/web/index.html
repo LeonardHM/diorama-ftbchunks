@@ -117,8 +117,10 @@ function showPlayerWhere() {
 
 // The markers, asked for as often as the map file. A map from before markers has no such file.
 function loadMarkers() {
-	fetch("markers.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : { markers: [] }).then(json => {
-		const list = Array.isArray(json.markers) ? json.markers.filter(m => m && typeof m.name === "string" && isFinite(m.x) && isFinite(m.y) && isFinite(m.z)) : [];
+	// Fetched whole each time: a marker moved twice in a second has the same date on its file.
+	fetch("markers.json", { cache: "no-store" }).then(r => r.ok ? r.json() : { markers: [] }).then(json => {
+		const number = n => typeof n === "number" && isFinite(n);
+		const list = Array.isArray(json.markers) ? json.markers.filter(m => m && typeof m.name === "string" && typeof m.dimension === "string" && number(m.x) && number(m.y) && number(m.z)) : [];
 		if (JSON.stringify(list) === JSON.stringify(markers)) return;
 		markers = list;
 		draw();

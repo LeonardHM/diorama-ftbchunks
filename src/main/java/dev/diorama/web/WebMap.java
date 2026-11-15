@@ -93,6 +93,8 @@ public final class WebMap {
 	private final Object wake = new Object();
 	private final Thread thread;
 	private volatile @Nullable WebServer http;
+	/** The players on the page, or null when the settings keep them off it. */
+	private final @Nullable WebPlayers players;
 	private volatile boolean stopping;
 	/** An operator asked to draw everything again; taken by the next pass. */
 	private final java.util.concurrent.atomic.AtomicBoolean redrawAll = new java.util.concurrent.atomic.AtomicBoolean();
@@ -108,6 +110,9 @@ public final class WebMap {
 		this.table = table;
 		this.modsFolder = modsFolder;
 		this.folder = settings.folder() != null ? settings.folder() : server.getWorldPath(LevelResource.ROOT).resolve("diorama-web");
+		// Where the server lets no map in the game show players, the page shows none either. Players
+		// come from the map's own web server, so there are none to show without it.
+		this.players = settings.players() && settings.port() > 0 && ShareServer.locks(server).radarAllowed() ? new WebPlayers(server, this::leftOut) : null;
 		this.thread = new Thread(this::run, "Diorama web map");
 		this.thread.setDaemon(true);
 		this.thread.setPriority(Thread.MIN_PRIORITY);
@@ -161,6 +166,9 @@ public final class WebMap {
 			Diorama.LOGGER.warn("Diorama's web map can't write to {}, so it doesn't start", this.folder, e);
 			return false;
 		}
+		if (this.players != null) {
+			this.players.start();
+		}
 		this.thread.start();
 		Diorama.LOGGER.info("Diorama's web map is drawing into {}", this.folder);
 		return true;
@@ -175,6 +183,9 @@ public final class WebMap {
 			this.thread.join(10_000);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
+		}
+		if (this.players != null) {
+			this.players.stop();
 		}
 		WebServer http = this.http;
 		if (http != null) {
@@ -311,7 +322,7 @@ public final class WebMap {
 			}
 			this.writeMapJson();
 			if (this.settings.port() > 0 && !this.stopping) {
-				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains);
+				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains, this.players == null ? null : this.players::json);
 				if (this.stopping) {
 					// The server stopped while the pictures were being deleted, and has looked for this already.
 					WebServer late = this.http;
@@ -505,6 +516,7 @@ public final class WebMap {
 			.append(",\"cos\":").append(String.format(Locale.ROOT, "%.6f", Projection.cos()))
 			.append(",\"background\":\"#").append(String.format(Locale.ROOT, "%06x", WebTiles.BACKGROUND)).append('"')
 			.append(",\"updated\":").append(System.currentTimeMillis())
+			.append(",\"players\":").append(this.players != null)
 			.append(",\"dimensions\":[");
 		List<Dimension> list = new ArrayList<>(this.dimensions.values());
 		list.sort(Comparator.comparing(d -> d.order() + d.id));

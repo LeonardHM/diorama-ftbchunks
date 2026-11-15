@@ -18,11 +18,12 @@ import org.jspecify.annotations.Nullable;
  * @param address the address the built-in web server listens on; empty for every address
  * @param folder where the tiles go; null for {@code diorama-web} in the world folder
  * @param everyChunk whether every finished chunk is drawn, rather than only land players spent time near
+ * @param players whether the page shows where online players are
  */
-public record WebSettings(boolean enabled, int port, String address, @Nullable Path folder, boolean everyChunk) {
+public record WebSettings(boolean enabled, int port, String address, @Nullable Path folder, boolean everyChunk, boolean players) {
 	public static final String FILE = "diorama-server.properties";
 	public static final int DEFAULT_PORT = 8100;
-	public static final WebSettings DEFAULTS = new WebSettings(false, DEFAULT_PORT, "", null, false);
+	public static final WebSettings DEFAULTS = new WebSettings(false, DEFAULT_PORT, "", null, false, true);
 
 	/** Reads the settings from {@code configFolder}, adding the web map's to the file if it lacks them. */
 	public static WebSettings load(Path configFolder) {
@@ -70,7 +71,8 @@ public record WebSettings(boolean enabled, int port, String address, @Nullable P
 		String folderText = properties.getProperty("web-map-folder", "").trim();
 		Path folder = folderText.isEmpty() ? null : Path.of(folderText);
 		boolean everyChunk = properties.getProperty("share-land", "visited").trim().toLowerCase(Locale.ROOT).equals("generated");
-		return new WebSettings(enabled, port, address, folder, everyChunk);
+		boolean players = !properties.getProperty("web-map-players", "true").trim().equalsIgnoreCase("false");
+		return new WebSettings(enabled, port, address, folder, everyChunk, players);
 	}
 
 	/** Each of the web map's settings: its key, what it means, its default. */
@@ -90,5 +92,12 @@ public record WebSettings(boolean enabled, int port, String address, @Nullable P
 		{"web-map-folder", """
 			# Where the web map's files go. Empty: diorama-web in the world folder.
 			""", ""},
+		{"web-map-players", """
+			# true: the web map shows where online players are, with their names. Anyone sneaking,
+			# invisible or spectating isn't shown, and no one is while radar-allowed is false.
+			# false: the web map shows no players. Players come from the web map's own web server
+			# (web-map-port), never from a file; behind a web server of your own, pass /players.json
+			# on to that port.
+			""", "true"},
 	};
 }

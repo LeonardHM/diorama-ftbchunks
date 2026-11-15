@@ -6,10 +6,9 @@ import dev.diorama.Projection;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -35,14 +34,20 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Land claims on the server's web map: FTB Chunks' and Open Parties and Claims', with their
  * owners' names and colours, as the map in the game shows them. Every couple of seconds the server
- * thread reads them from each mod's own server API, and when they changed {@code claims.json} is
- * written beside the pictures for the page. Which chunk each picture's pixel shows is written with
+ * thread reads them from each mod's own server API, a little at a time, for the map's own web
+ * server to answer {@code /claims.json} with. Which chunk each picture's pixel shows is written with
  * the picture ({@link WebChunks}), so the page paints a claim on the ground it covers, hills too.
+ *
+ * <p>Claims are only ever held in memory, as players are ({@link WebPlayers}), and never written
+ * beside the pictures: a file would go on naming owners and places after a team hid its claims or a
+ * player unclaimed, whenever a read or a write failed, after the owner turned claims off, or from a
+ * folder another web server still serves. A mod's last read older than its cut-off counts as none.
  *
  * <p>The page shows only what every player in the game is shown: FTB Chunks hides a team's claims
  * from other teams unless the team's claim visibility is public, and Open Parties and Claims sends
@@ -53,34 +58,42 @@ import org.jspecify.annotations.Nullable;
  * that isn't where this class expects it turns that mod's claims off, logged once.
  */
 final class WebClaims {
-	static final String FILE = "claims.json";
+	static final String PATH = "/claims.json";
 	/** The least time between two reads. */
 	private static final long MIN_GAP_MS = 2000;
 	/** A read may take this share of the server thread's time at most: the next waits this many times as long as it took. */
 	private static final int BUDGET = 200;
+	/** How long one server task may read before it hands the rest to the next tick. */
+	private static final long TASK_NANOS = 1_000_000;
+	/** A tick: the wait between two tasks of one read. */
+	private static final long TICK_MS = 50;
+	/** A mod's last read older than this, or three times its usual wait if longer, says nothing. */
+	private static final long STALE_MS = 15_000;
 
 	private final MinecraftServer server;
 	private final Predicate<ServerLevel> leftOut;
-	private final Path folder;
 	private final List<Source> sources;
 	private final Thread thread;
 	private volatile boolean stopping;
-	/** What the file holds now; null before it's written. */
-	private @Nullable String written;
 	/** How many claimed chunks the page has and what reading them costs, for the status command. */
 	private volatile String summary = "land claims not read yet";
+	/** Names this start's answers, so a page holding one from before a restart never takes a new one for it. */
+	private final String epoch = Long.toString(System.currentTimeMillis(), 36);
+	/** What was last answered and from which reads; see {@link #answer}. */
+	private final List<Snapshot> answeredFrom = new ArrayList<>();
+	private String answered = "{\"dimensions\":[]}";
+	private long version;
 
-	private WebClaims(MinecraftServer server, Predicate<ServerLevel> leftOut, Path folder, List<Source> sources) {
+	private WebClaims(MinecraftServer server, Predicate<ServerLevel> leftOut, List<Source> sources) {
 		this.server = server;
 		this.leftOut = leftOut;
-		this.folder = folder;
 		this.sources = sources;
 		this.thread = new Thread(this::run, "Diorama web map claims");
 		this.thread.setDaemon(true);
 	}
 
 	/** The claims to show, or null when no claims mod this reads is installed. */
-	static @Nullable WebClaims of(MinecraftServer server, Predicate<ServerLevel> leftOut, Path folder) {
+	static @Nullable WebClaims of(MinecraftServer server, Predicate<ServerLevel> leftOut) {
 		List<Source> sources = new ArrayList<>();
 		if (loaded("ftbchunks")) {
 			sources.add(new FtbChunks());
@@ -88,12 +101,7 @@ final class WebClaims {
 		if (loaded("openpartiesandclaims")) {
 			sources.add(new OpenPartiesAndClaims());
 		}
-		return sources.isEmpty() ? null : new WebClaims(server, leftOut, folder, sources);
-	}
-
-	/** Whether a claims mod this reads is installed, so its claims can be shown. */
-	static boolean anyMod() {
-		return loaded("ftbchunks") || loaded("openpartiesandclaims");
+		return sources.isEmpty() ? null : new WebClaims(server, leftOut, sources);
 	}
 
 	private static boolean loaded(String id) {
@@ -104,12 +112,14 @@ final class WebClaims {
 		*///?}
 	}
 
-	/** Deletes the claims file left in a map's folder, so a page can't show claims that aren't current or allowed. */
-	static void delete(Path folder) {
-		try {
-			Files.deleteIfExists(folder.resolve(FILE));
-		} catch (IOException e) {
-			Diorama.LOGGER.warn("Couldn't delete the web map's old {} in {}", FILE, folder, e);
+	/** Deletes the claims file an unreleased build wrote into a map's folder; claims are never a file now. */
+	static void deleteOldFile(Path folder) {
+		for (String name : new String[] {"claims.json", "claims.json.part"}) {
+			try {
+				Files.deleteIfExists(folder.resolve(name));
+			} catch (IOException e) {
+				Diorama.LOGGER.debug("Couldn't delete the web map's old {} in {}", name, folder, e);
+			}
 		}
 	}
 
@@ -122,105 +132,207 @@ final class WebClaims {
 		this.thread.interrupt();
 	}
 
-	/** How many claimed chunks the page shows, and how long the last read held the server thread. */
+	/** How many claimed chunks the page shows, and what reading them costs the server thread. */
 	String summary() {
 		return this.summary;
 	}
 
+	/**
+	 * What the page gets now: every claim of the mods whose last read isn't stale, with this
+	 * answer's version in it; or null when the page says it has that version already.
+	 */
+	synchronized @Nullable String answer(@Nullable String since) {
+		long now = System.nanoTime();
+		List<Snapshot> fresh = new ArrayList<>();
+		if (!this.stopping) {
+			for (Source source : this.sources) {
+				Snapshot read = source.last;
+				if (read != null && now - read.at() <= read.staleAfter()) {
+					fresh.add(read);
+				}
+			}
+		}
+		boolean same = fresh.size() == this.answeredFrom.size();
+		for (int i = 0; same && i < fresh.size(); i++) {
+			same = fresh.get(i) == this.answeredFrom.get(i);
+		}
+		if (!same) {
+			String text = json(fresh);
+			if (!text.equals(this.answered)) {
+				this.answered = text;
+				this.version++;
+			}
+			this.answeredFrom.clear();
+			this.answeredFrom.addAll(fresh);
+		}
+		String tag = this.epoch + "-" + this.version;
+		return tag.equals(since) ? null : "{\"version\":\"" + tag + "\"," + this.answered.substring(1);
+	}
+
 	private void run() {
-		CompletableFuture<Read> asked = null;
 		long wait = 0;
 		while (!this.stopping) {
 			try {
 				Thread.sleep(wait);
-				if (asked == null) {
-					// The claims mods keep their claims on the server thread; it reads them between ticks.
-					CompletableFuture<Read> look = new CompletableFuture<>();
-					asked = look;
-					this.server.execute(() -> {
-						try {
-							look.complete(this.read());
-						} catch (RuntimeException | LinkageError e) {
-							look.completeExceptionally(e);
+				long started = System.nanoTime();
+				Cost cost = new Cost();
+				Map<Source, Map<String, Map<Long, Owner>>> reads = new IdentityHashMap<>();
+				for (Source source : this.sources) {
+					reads.put(source, this.read(source, cost));
+				}
+				if (this.stopping) {
+					return;
+				}
+				wait = Math.max(MIN_GAP_MS, cost.nanos * BUDGET / 1_000_000);
+				long took = System.nanoTime() - started;
+				// Until the next read is in, with room for it to take a few times as long.
+				long staleAfter = Math.max(STALE_MS * 1_000_000, 3 * (wait * 1_000_000 + took));
+				long now = System.nanoTime();
+				int chunks = 0;
+				for (Source source : this.sources) {
+					Map<String, Map<Long, Owner>> read = reads.get(source);
+					// A mod that couldn't be read has nothing on the page until it's read again.
+					source.last = read == null ? null : new Snapshot(read, now, staleAfter);
+					if (read != null) {
+						for (Map<Long, Owner> dimension : read.values()) {
+							chunks += dimension.size();
 						}
-					});
-				}
-				Read read = asked.get(MIN_GAP_MS, TimeUnit.MILLISECONDS);
-				asked = null;
-				wait = Math.max(MIN_GAP_MS, read.nanos() * BUDGET / 1_000_000);
-				if (read.complete() && !this.stopping) {
-					this.write(read);
-					int chunks = 0;
-					for (Map<Long, Owner> dimension : read.dimensions().values()) {
-						chunks += dimension.size();
 					}
-					this.summary = String.format(Locale.ROOT, "%d claimed chunks on the page, read in %.1f ms on the server thread every %.0f s",
-						chunks, read.nanos() / 1e6, wait / 1000.0);
 				}
+				this.summary = String.format(Locale.ROOT, "%d claimed chunks on the page; the last read took %.1f ms of the server thread in %d tasks (the longest %.2f ms) over %.1f s, and the next is in %.0f s",
+					chunks, cost.nanos / 1e6, cost.tasks, cost.longest / 1e6, took / 1e9, wait / 1000.0);
 			} catch (InterruptedException e) {
 				return;
-			} catch (TimeoutException e) {
-				// A server too far behind to answer yet: waited for again.
-				wait = 0;
-			} catch (ExecutionException e) {
-				asked = null;
-				wait = MIN_GAP_MS;
-				Diorama.LOGGER.debug("The web map couldn't read land claims", e.getCause());
 			}
 		}
 	}
 
-	/** One claim's owner as the page shows it. {@code titled}: {@code name} is the claim's whole title, as Open Parties and Claims words it. */
-	private record Owner(String name, int rgb, boolean forced, boolean titled) {
+	/** The server thread's time a read took, over all its tasks. */
+	private static final class Cost {
+		long nanos;
+		long longest;
+		int tasks;
 	}
 
-	/** Everyone's claims at one moment, by dimension: chunk (world x, z) to owner. {@code complete} false while a mod can't say yet. */
-	private record Read(Map<String, Map<Long, Owner>> dimensions, boolean complete, long nanos) {
+	/** What one task of a read handed back: where the read is, and whether it's done. */
+	private record Step(@Nullable Job job, boolean done, long nanos) {
 	}
 
-	/** Reads every claim the page may show. Server thread. */
-	private Read read() {
+	/**
+	 * One mod's claims, read a little at a time on the server thread, one task a tick, each stopping
+	 * after {@link #TASK_NANOS}. Null when the mod can't be read now. Waits as long as the server
+	 * thread takes to get to each task.
+	 */
+	private @Nullable Map<String, Map<Long, Owner>> read(Source source, Cost cost) throws InterruptedException {
+		Job job = null;
+		while (!this.stopping) {
+			CompletableFuture<Step> asked = new CompletableFuture<>();
+			Job going = job;
+			// The claims mods keep their claims on the server thread; it reads them between ticks.
+			this.server.execute(() -> {
+				try {
+					asked.complete(this.step(source, going));
+				} catch (Error e) {
+					asked.completeExceptionally(e);
+					throw e;
+				}
+			});
+			Step step = null;
+			while (step == null) {
+				try {
+					step = asked.get(500, TimeUnit.MILLISECONDS);
+				} catch (TimeoutException e) {
+					// A server too far behind to get to it yet.
+					if (this.stopping) {
+						return null;
+					}
+				} catch (ExecutionException e) {
+					return null;
+				}
+			}
+			cost.nanos += step.nanos();
+			cost.longest = Math.max(cost.longest, step.nanos());
+			cost.tasks++;
+			if (step.done()) {
+				return step.job() == null ? null : step.job().claims;
+			}
+			job = step.job();
+			Thread.sleep(TICK_MS);
+		}
+		return null;
+	}
+
+	/** One task of a read. Server thread. */
+	private Step step(Source source, @Nullable Job going) {
 		java.lang.management.ThreadMXBean threads = java.lang.management.ManagementFactory.getThreadMXBean();
 		boolean cpu = threads.isCurrentThreadCpuTimeSupported();
 		long start = cpu ? threads.getCurrentThreadCpuTime() : System.nanoTime();
-		Map<String, Boolean> shown = new HashMap<>();
-		for (ServerLevel level : this.server.getAllLevels()) {
-			shown.put(level.dimension().identifier().toString(), !this.leftOut.test(level));
-		}
-		Map<String, Map<Long, Owner>> dimensions = new TreeMap<>();
-		boolean complete = true;
-		for (Source source : this.sources) {
-			complete &= source.read(this.server, (dimension, x, z, owner) -> {
-				if (shown.getOrDefault(dimension, false)) {
-					// A chunk both mods claim, which shouldn't happen: the first one's.
-					dimensions.computeIfAbsent(dimension, d -> new HashMap<>()).putIfAbsent(key(x, z), owner);
+		long deadline = System.nanoTime() + TASK_NANOS;
+		Job job = going;
+		boolean done;
+		try {
+			if (job == null) {
+				Map<String, Boolean> shown = new HashMap<>();
+				for (ServerLevel level : this.server.getAllLevels()) {
+					shown.put(level.dimension().identifier().toString(), !this.leftOut.test(level));
 				}
-			});
+				job = source.begin(this.server, id -> shown.getOrDefault(id, false));
+			}
+			done = job == null || job.step(deadline);
+		} catch (InvocationTargetException e) {
+			source.threw(e.getCause());
+			job = null;
+			done = true;
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+			source.fail(e);
+			job = null;
+			done = true;
 		}
-		return new Read(dimensions, complete, (cpu ? threads.getCurrentThreadCpuTime() : System.nanoTime()) - start);
+		return new Step(job, done, (cpu ? threads.getCurrentThreadCpuTime() : System.nanoTime()) - start);
 	}
 
 	private static long key(int x, int z) {
 		return ((long) x << 32) | (z & 0xFFFFFFFFL);
 	}
 
-	/** Writes the file when the claims differ from what it holds. */
-	private void write(Read read) {
+	/**
+	 * One claim's owner as the page shows it. {@code id} tells owners apart however they're named
+	 * and coloured: the mod's own id for the team or player (and sub-claim). {@code titled}:
+	 * {@code name} is the claim's whole title, as Open Parties and Claims words it.
+	 */
+	private record Owner(String id, String name, int rgb, boolean forced, boolean titled) {
+	}
+
+	/** One mod's claims at one moment, by dimension: chunk (world x, z) to owner; and when it goes stale. */
+	private record Snapshot(Map<String, Map<Long, Owner>> dimensions, long at, long staleAfter) {
+	}
+
+	/** The page's JSON, without its version: every chunk claimed in the reads, by dimension. */
+	private static String json(List<Snapshot> reads) {
+		Map<String, TreeMap<Long, Owner>> byDimension = new TreeMap<>();
 		Facing facing = Projection.facing();
+		for (Snapshot read : reads) {
+			for (Map.Entry<String, Map<Long, Owner>> dimension : read.dimensions().entrySet()) {
+				// Chunks in the pictures' turned space, in order, so the same claims always read the same.
+				TreeMap<Long, Owner> chunks = byDimension.computeIfAbsent(dimension.getKey(), d -> new TreeMap<>());
+				for (Map.Entry<Long, Owner> chunk : dimension.getValue().entrySet()) {
+					int x = (int) (chunk.getKey() >> 32);
+					int z = (int) (long) chunk.getKey();
+					// A chunk both mods claim, which shouldn't happen: the first one's.
+					chunks.putIfAbsent(key(facing.blockX(x, z), facing.blockZ(x, z)), chunk.getValue());
+				}
+			}
+		}
 		StringBuilder json = new StringBuilder("{\"dimensions\":[");
 		boolean firstDimension = true;
-		for (Map.Entry<String, Map<Long, Owner>> dimension : read.dimensions().entrySet()) {
-			// Chunks in the pictures' turned space, in order, so the same claims always read the same.
-			TreeMap<Long, Owner> chunks = new TreeMap<>();
-			for (Map.Entry<Long, Owner> chunk : dimension.getValue().entrySet()) {
-				int x = (int) (chunk.getKey() >> 32);
-				int z = (int) (long) chunk.getKey();
-				chunks.put(key(facing.blockX(x, z), facing.blockZ(x, z)), chunk.getValue());
+		for (Map.Entry<String, TreeMap<Long, Owner>> dimension : byDimension.entrySet()) {
+			if (dimension.getValue().isEmpty()) {
+				continue;
 			}
 			Map<Owner, Integer> owners = new HashMap<>();
 			List<Owner> order = new ArrayList<>();
 			StringBuilder list = new StringBuilder();
-			for (Map.Entry<Long, Owner> chunk : chunks.entrySet()) {
+			for (Map.Entry<Long, Owner> chunk : dimension.getValue().entrySet()) {
 				Integer index = owners.get(chunk.getValue());
 				if (index == null) {
 					index = order.size();
@@ -233,26 +345,13 @@ final class WebClaims {
 			firstDimension = false;
 			for (int i = 0; i < order.size(); i++) {
 				Owner owner = order.get(i);
-				json.append(i == 0 ? "" : ",").append("{\"name\":\"").append(escape(owner.name()))
+				json.append(i == 0 ? "" : ",").append("{\"id\":\"").append(escape(owner.id())).append("\",\"name\":\"").append(escape(owner.name()))
 					.append(String.format(Locale.ROOT, "\",\"color\":\"#%06x\"", owner.rgb() & 0xFFFFFF))
 					.append(owner.forced() ? ",\"forced\":true" : "").append(owner.titled() ? ",\"titled\":true" : "").append('}');
 			}
 			json.append("],\"chunks\":[").append(list).append("]}");
 		}
-		json.append("]}");
-		String text = json.toString();
-		if (text.equals(this.written)) {
-			return;
-		}
-		Path file = this.folder.resolve(FILE);
-		Path part = this.folder.resolve(FILE + ".part");
-		try {
-			Files.writeString(part, text, StandardCharsets.UTF_8);
-			Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-			this.written = text;
-		} catch (IOException e) {
-			Diorama.LOGGER.warn("Couldn't write the web map's {}", FILE, e);
-		}
+		return json.append("]}").toString();
 	}
 
 	static String escape(String text) {
@@ -270,9 +369,19 @@ final class WebClaims {
 		return out.toString();
 	}
 
-	/** Where each claim goes as a mod reads it. */
-	private interface Found {
-		void claim(String dimension, int chunkX, int chunkZ, Owner owner);
+	/**
+	 * A read of one mod's claims under way, kept between its tasks; only the server thread touches
+	 * it. {@link #step} reads until the deadline and says whether it's done; {@link #claims} has
+	 * what it found, in the dimensions the page shows.
+	 */
+	private abstract static class Job {
+		final Map<String, Map<Long, Owner>> claims = new HashMap<>();
+
+		abstract boolean step(long deadline) throws ReflectiveOperationException;
+
+		final void claim(String dimension, int chunkX, int chunkZ, Owner owner) {
+			this.claims.computeIfAbsent(dimension, d -> new HashMap<>()).putIfAbsent(key(chunkX, chunkZ), owner);
+		}
 	}
 
 	/** One claims mod's claims, read through its server API. */
@@ -281,9 +390,11 @@ final class WebClaims {
 		private boolean failed;
 		/** Whether the mod throwing has been logged: once, then only at debug level. */
 		private boolean warned;
+		/** Its last read, or null while it has none to show. Set by the reading thread, read by the web server's. */
+		volatile @Nullable Snapshot last;
 
-		/** Hands every claim others may see to {@code found}; false when the mod can't say now. Server thread. */
-		final boolean read(MinecraftServer server, Found found) {
+		/** A read of every claim others may see, in the dimensions {@code shown} says yes to; null when the mod can't say now. Server thread. */
+		final @Nullable Job begin(MinecraftServer server, Predicate<String> shown) throws ReflectiveOperationException {
 			if (!this.looked) {
 				this.looked = true;
 				try {
@@ -293,27 +404,21 @@ final class WebClaims {
 					this.fail(e);
 				}
 			}
-			if (this.failed) {
-				return true;
-			}
-			try {
-				return this.claims(server, found);
-			} catch (InvocationTargetException e) {
-				// The mod itself threw: tried again next time.
-				if (!this.warned) {
-					this.warned = true;
-					Diorama.LOGGER.warn("{} couldn't give its land claims to the web map; trying again", this.name(), e.getCause());
-				} else {
-					Diorama.LOGGER.debug("{} couldn't give its land claims", this.name(), e.getCause());
-				}
-				return false;
-			} catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-				this.fail(e);
-				return true;
+			return this.failed ? null : this.read(server, shown);
+		}
+
+		/** The mod itself threw: nothing of it on the page until it's read again. */
+		final void threw(Throwable e) {
+			if (!this.warned) {
+				this.warned = true;
+				Diorama.LOGGER.warn("{} couldn't give its land claims to the web map; trying again", this.name(), e);
+			} else {
+				Diorama.LOGGER.debug("{} couldn't give its land claims", this.name(), e);
 			}
 		}
 
-		private void fail(Throwable e) {
+		/** A name not where it's expected: its claims are off until the server starts again. */
+		final void fail(Throwable e) {
 			if (!this.failed) {
 				this.failed = true;
 				Diorama.LOGGER.warn("Couldn't read {}'s land claims; the web map won't show them", this.name(), e);
@@ -324,7 +429,7 @@ final class WebClaims {
 
 		abstract void lookUp(MinecraftServer server) throws ReflectiveOperationException;
 
-		abstract boolean claims(MinecraftServer server, Found found) throws ReflectiveOperationException;
+		abstract @Nullable Job read(MinecraftServer server, Predicate<String> shown) throws ReflectiveOperationException;
 	}
 
 	/**
@@ -345,6 +450,7 @@ final class WebClaims {
 		private Method posZ;
 		private Method hidden;
 		private Method team;
+		private Method teamId;
 		private Method getProperty;
 		private Object colorProperty;
 		private Object nameProperty;
@@ -375,6 +481,7 @@ final class WebClaims {
 			this.hidden = teamData.getMethod("shouldHideClaims");
 			this.team = teamData.getMethod("getTeam");
 			Class<?> team = Class.forName("dev.ftb.mods.ftbteams.api.Team");
+			this.teamId = team.getMethod("getId");
 			this.getProperty = team.getMethod("getProperty", Class.forName("dev.ftb.mods.ftbteams.api.property.TeamProperty"));
 			Class<?> properties = Class.forName("dev.ftb.mods.ftbteams.api.property.TeamProperties");
 			this.colorProperty = properties.getField("COLOR").get(null);
@@ -383,36 +490,49 @@ final class WebClaims {
 		}
 
 		@Override
-		boolean claims(MinecraftServer server, Found found) throws ReflectiveOperationException {
+		@Nullable Job read(MinecraftServer server, Predicate<String> shown) throws ReflectiveOperationException {
 			if (!(boolean) this.managerLoaded.invoke(this.api)) {
-				return false;
+				return null;
 			}
-			Collection<?> chunks = (Collection<?>) this.allChunks.invoke(this.manager.invoke(this.api));
-			// Looked up once a read, not for each chunk: a team's owner, plain and force loaded (null
-			// when only its allies see its claims), and a dimension's name.
+			// A copy: the manager's own list may change between this read's tasks.
+			List<Object> chunks = new ArrayList<>((Collection<?>) this.allChunks.invoke(this.manager.invoke(this.api)));
+			// Looked up once a read, not for each chunk: a team's owner, plain and force loaded (none
+			// when only its allies see its claims), and a dimension's name (null when the page leaves it out).
 			Map<Object, Owner[]> teams = new IdentityHashMap<>();
-			Map<Object, String> dimensions = new IdentityHashMap<>();
-			for (Object chunk : chunks) {
-				Object data = this.chunkTeamData.invoke(chunk);
-				Owner[] owner = teams.get(data);
-				if (owner == null) {
-					Optional<Owner> plain = this.owner(data);
-					owner = plain.map(o -> new Owner[] {o, new Owner(o.name(), o.rgb(), true, false)}).orElse(new Owner[0]);
-					teams.put(data, owner);
+			Map<Object, Optional<String>> dimensions = new IdentityHashMap<>();
+			return new Job() {
+				private int next;
+
+				@Override
+				boolean step(long deadline) throws ReflectiveOperationException {
+					while (this.next < chunks.size()) {
+						Object chunk = chunks.get(this.next++);
+						Object pos = FtbChunks.this.chunkPos.invoke(chunk);
+						Object key = FtbChunks.this.posDimension.invoke(pos);
+						Optional<String> dimension = dimensions.get(key);
+						if (dimension == null) {
+							String id = ((net.minecraft.resources.ResourceKey<?>) key).identifier().toString();
+							dimension = shown.test(id) ? Optional.of(id) : Optional.empty();
+							dimensions.put(key, dimension);
+						}
+						if (dimension.isPresent()) {
+							Object data = FtbChunks.this.chunkTeamData.invoke(chunk);
+							Owner[] owner = teams.get(data);
+							if (owner == null) {
+								owner = FtbChunks.this.owner(data).map(o -> new Owner[] {o, new Owner(o.id(), o.name(), o.rgb(), true, false)}).orElse(new Owner[0]);
+								teams.put(data, owner);
+							}
+							if (owner.length > 0) {
+								this.claim(dimension.get(), (int) FtbChunks.this.posX.invoke(pos), (int) FtbChunks.this.posZ.invoke(pos), owner[(boolean) FtbChunks.this.chunkForceLoaded.invoke(chunk) ? 1 : 0]);
+							}
+						}
+						if ((this.next & 15) == 0 && System.nanoTime() > deadline) {
+							return this.next >= chunks.size();
+						}
+					}
+					return true;
 				}
-				if (owner.length == 0) {
-					continue;
-				}
-				Object pos = this.chunkPos.invoke(chunk);
-				Object key = this.posDimension.invoke(pos);
-				String dimension = dimensions.get(key);
-				if (dimension == null) {
-					dimension = ((net.minecraft.resources.ResourceKey<?>) key).identifier().toString();
-					dimensions.put(key, dimension);
-				}
-				found.claim(dimension, (int) this.posX.invoke(pos), (int) this.posZ.invoke(pos), owner[(boolean) this.chunkForceLoaded.invoke(chunk) ? 1 : 0]);
-			}
-			return true;
+			};
 		}
 
 		/** A team's claims as the page shows them; empty when only its allies see them. */
@@ -423,15 +543,19 @@ final class WebClaims {
 			Object team = this.team.invoke(data);
 			Object colour = this.getProperty.invoke(team, this.colorProperty);
 			Object name = this.getProperty.invoke(team, this.nameProperty);
-			return Optional.of(new Owner(name instanceof String s ? s : "", colour == null ? 0xFFFFFF : (int) this.rgb.invoke(colour), false, false));
+			return Optional.of(new Owner("ftb:" + this.teamId.invoke(team), name instanceof String s ? s : "", colour == null ? 0xFFFFFF : (int) this.rgb.invoke(colour), false, false));
 		}
 	}
 
 	/**
-	 * Open Parties and Claims: every claim from its server claims manager, region by region, with the
+	 * Open Parties and Claims: every claim from its server claims manager, owner by owner, with the
 	 * title and colour it gives a claim ("Base - Alex's Claim"), in the server's own language as it
 	 * words them for players without the mod. Older versions (the newest on 1.21.3, 1.21.6 and
 	 * 1.21.9) have no call for a title or colour, so they're put together here as those word them.
+	 *
+	 * <p>It keeps each owner's claims per dimension as lists of chunks, one list per kind of claim
+	 * (sub-claim, forceloadable or not), so only claimed chunks are read, and a dimension the page
+	 * leaves out isn't read at all.
 	 */
 	private static final class OpenPartiesAndClaims extends Source {
 		private static final String PAC = "xaero.pac.";
@@ -444,12 +568,13 @@ final class WebClaims {
 		private Method localize;
 		/** The server's own wording of one of its texts, for older versions, whose localizer needs a player. */
 		private @Nullable Method defaultTranslation;
-		private Method dimensionStream;
-		private Method dimensionId;
-		private Method regionStream;
-		private Method regionX;
-		private Method regionZ;
-		private Method regionClaim;
+		private Method playerInfos;
+		private Method infoPlayer;
+		private Method infoDimensions;
+		private Method dimensionLists;
+		private Method listState;
+		private Method listChunks;
+		private Method listCount;
 		private Method claimPlayer;
 		private Method claimSub;
 		private Method claimForceloadable;
@@ -484,14 +609,15 @@ final class WebClaims {
 			}
 			Class<?> manager = Class.forName(PAC + "common.server.claims.api.IServerClaimsManagerAPI");
 			Class<?> claim = Class.forName(PAC + "common.claims.player.api.IPlayerChunkClaimAPI");
-			this.dimensionStream = manager.getMethod("getDimensionStream");
-			Class<?> dimension = Class.forName(PAC + "common.server.claims.api.IServerDimensionClaimsManagerAPI");
-			this.dimensionId = dimension.getMethod("getDimension");
-			this.regionStream = dimension.getMethod("getRegionStream");
-			Class<?> region = Class.forName(PAC + "common.server.claims.api.IServerRegionClaimsAPI");
-			this.regionX = region.getMethod("getX");
-			this.regionZ = region.getMethod("getZ");
-			this.regionClaim = region.getMethod("get", int.class, int.class);
+			this.playerInfos = manager.getMethod("getPlayerInfoStream");
+			Class<?> info = Class.forName(PAC + "common.server.claims.player.api.IServerPlayerClaimInfoAPI");
+			this.infoPlayer = info.getMethod("getPlayerId");
+			this.infoDimensions = info.getMethod("getStream");
+			this.dimensionLists = Class.forName(PAC + "common.claims.player.api.IPlayerDimensionClaimsAPI").getMethod("getStream");
+			Class<?> list = Class.forName(PAC + "common.claims.player.api.IPlayerClaimPosListAPI");
+			this.listState = list.getMethod("getClaimState");
+			this.listChunks = list.getMethod("getStream");
+			this.listCount = list.getMethod("getCount");
 			this.claimPlayer = claim.getMethod("getPlayerId");
 			this.claimSub = claim.getMethod("getSubConfigIndex");
 			this.claimForceloadable = claim.getMethod("isForceloadable");
@@ -504,7 +630,6 @@ final class WebClaims {
 				this.colour = null;
 			}
 			this.playerInfo = manager.getMethod("getPlayerInfo", UUID.class);
-			Class<?> info = Class.forName(PAC + "common.server.claims.player.api.IServerPlayerClaimInfoAPI");
 			this.username = info.getMethod("getPlayerUsername");
 			this.claimsName = info.getMethod("getClaimsName");
 			this.subClaimsName = info.getMethod("getClaimsName", int.class);
@@ -517,62 +642,119 @@ final class WebClaims {
 		}
 
 		@Override
-		boolean claims(MinecraftServer server, Found found) throws ReflectiveOperationException {
+		@Nullable Job read(MinecraftServer server, Predicate<String> shown) throws ReflectiveOperationException {
 			// ALL sends every claim to every player; OWNED_ONLY each player their own and the server's;
 			// NOT_SYNCED none but their own. The page is no one's, so it shows what reaches everyone.
 			Object sync = this.syncField.get(this.config);
 			String mode = String.valueOf(sync.getClass().getMethod("get").invoke(sync));
-			if (mode.equals("NOT_SYNCED")) {
-				return true;
-			}
 			boolean all = mode.equals("ALL");
 			Object api = this.serverApi.invoke(null, server);
 			Object manager = this.claimsManager.invoke(api);
 			Object localizer = this.localizer.invoke(api);
-			try (Stream<?> dimensions = (Stream<?>) this.dimensionStream.invoke(manager)) {
-				for (Iterator<?> d = dimensions.iterator(); d.hasNext(); ) {
-					Object dimension = d.next();
-					Object id = this.dimensionId.invoke(dimension);
-					String name = id.toString();
-					// Open Parties and Claims keeps one claim object per kind of claim, so a dimension has few.
-					Map<Object, Optional<Owner>> kinds = new IdentityHashMap<>();
-					try (Stream<?> regions = (Stream<?>) this.regionStream.invoke(dimension)) {
-						for (Iterator<?> r = regions.iterator(); r.hasNext(); ) {
-							Object region = r.next();
-							int rx = (int) this.regionX.invoke(region);
-							int rz = (int) this.regionZ.invoke(region);
-							for (int i = 0; i < 32; i++) {
-								for (int j = 0; j < 32; j++) {
-									Object state = this.regionClaim.invoke(region, i, j);
-									if (state == null) {
-										continue;
-									}
-									Optional<Owner> owner = kinds.get(state);
-									if (owner == null) {
-										boolean everyone = all || SERVER_CLAIM.equals(this.claimPlayer.invoke(state));
-										owner = everyone ? Optional.of(this.owner(manager, localizer, state, id)) : Optional.empty();
-										kinds.put(state, owner);
-									}
-									if (owner.isPresent()) {
-										found.claim(name, rx << 5 | i, rz << 5 | j, owner.get());
-									}
+			// The owners, copied now: its own list may change between this read's tasks.
+			List<Object> owners = new ArrayList<>();
+			if (!mode.equals("NOT_SYNCED")) {
+				try (Stream<?> infos = (Stream<?>) this.playerInfos.invoke(manager)) {
+					for (Iterator<?> i = infos.iterator(); i.hasNext(); ) {
+						Object info = i.next();
+						if (all || SERVER_CLAIM.equals(this.infoPlayer.invoke(info))) {
+							owners.add(info);
+						}
+					}
+				}
+			}
+			// A kind of claim's owner, as the page shows it, per dimension: its title can name the dimension.
+			Map<String, Map<Object, Owner>> kinds = new HashMap<>();
+			return new Job() {
+				private int next;
+				/** The current owner's lists of chunks still to read: dimension, then the list. */
+				private final ArrayDeque<Object[]> lists = new ArrayDeque<>();
+				/** The chunks of the list being added, copied out of it whole; null between lists. */
+				private long @Nullable [] chunks;
+				private int added;
+				private String dimension = "";
+				private @Nullable Owner owner;
+
+				@Override
+				boolean step(long deadline) throws ReflectiveOperationException {
+					while (true) {
+						long[] chunks = this.chunks;
+						if (chunks != null) {
+							// A list can hold thousands: added a slice at a time.
+							while (this.added < chunks.length) {
+								long chunk = chunks[this.added++];
+								this.claim(this.dimension, (int) (chunk >> 32), (int) chunk, this.owner);
+								if ((this.added & 255) == 0 && System.nanoTime() > deadline) {
+									break;
+								}
+							}
+							if (this.added >= chunks.length) {
+								this.chunks = null;
+							}
+						} else if (this.lists.isEmpty()) {
+							if (this.next >= owners.size()) {
+								return true;
+							}
+							this.expand(owners.get(this.next++));
+						} else {
+							Object[] list = this.lists.poll();
+							this.dimension = (String) list[0];
+							Object state = OpenPartiesAndClaims.this.listState.invoke(list[2]);
+							Map<Object, Owner> ofDimension = kinds.computeIfAbsent(this.dimension, d -> new IdentityHashMap<>());
+							Owner owner = ofDimension.get(state);
+							if (owner == null) {
+								owner = OpenPartiesAndClaims.this.owner(manager, localizer, state, list[1]);
+								ofDimension.put(state, owner);
+							}
+							this.owner = owner;
+							// Copied whole now: the list itself may change before the next task.
+							int count = (int) OpenPartiesAndClaims.this.listCount.invoke(list[2]);
+							long[] copy = new long[count];
+							int n = 0;
+							try (Stream<?> positions = (Stream<?>) OpenPartiesAndClaims.this.listChunks.invoke(list[2])) {
+								for (Iterator<?> c = positions.iterator(); c.hasNext() && n < count; ) {
+									ChunkPos pos = (ChunkPos) c.next();
+									copy[n++] = key(pos.getMinBlockX() >> 4, pos.getMinBlockZ() >> 4);
+								}
+							}
+							this.chunks = n == count ? copy : java.util.Arrays.copyOf(copy, n);
+							this.added = 0;
+						}
+						if (System.nanoTime() > deadline) {
+							return this.chunks == null && this.lists.isEmpty() && this.next >= owners.size();
+						}
+					}
+				}
+
+				/** An owner's lists of chunks, in the dimensions the page shows. */
+				private void expand(Object info) throws ReflectiveOperationException {
+					try (Stream<?> dimensions = (Stream<?>) OpenPartiesAndClaims.this.infoDimensions.invoke(info)) {
+						for (Iterator<?> d = dimensions.iterator(); d.hasNext(); ) {
+							Map.Entry<?, ?> entry = (Map.Entry<?, ?>) d.next();
+							String dimension = entry.getKey().toString();
+							if (!shown.test(dimension)) {
+								continue;
+							}
+							try (Stream<?> lists = (Stream<?>) OpenPartiesAndClaims.this.dimensionLists.invoke(entry.getValue())) {
+								for (Iterator<?> l = lists.iterator(); l.hasNext(); ) {
+									this.lists.add(new Object[] {dimension, entry.getKey(), l.next()});
 								}
 							}
 						}
 					}
 				}
-			}
-			return true;
+			};
 		}
 
 		private Owner owner(Object manager, Object localizer, Object state, Object dimension) throws ReflectiveOperationException {
 			boolean forceloadable = (boolean) this.claimForceloadable.invoke(state);
-			if (this.fullName != null) {
-				Component title = (Component) this.localize.invoke(localizer, null, this.fullName.invoke(manager, state, dimension, true));
-				return new Owner(title.getString(), (int) this.colour.invoke(manager, state, dimension) & 0xFFFFFF, forceloadable, true);
-			}
 			UUID player = (UUID) this.claimPlayer.invoke(state);
 			int sub = (int) this.claimSub.invoke(state);
+			String id = "opac:" + player + "/" + sub;
+			if (this.fullName != null) {
+				Component title = (Component) this.localize.invoke(localizer, null, this.fullName.invoke(manager, state, dimension, true));
+				return new Owner(id, title.getString(), (int) this.colour.invoke(manager, state, dimension) & 0xFFFFFF, forceloadable, true);
+			}
 			Object info = this.playerInfo.invoke(manager, player);
 			String custom = (String) this.subClaimsName.invoke(info, sub);
 			if (sub != -1 && (custom == null || custom.isEmpty())) {
@@ -584,7 +766,7 @@ final class WebClaims {
 				: this.text(localizer, "gui.xaero_pac_title_entered_claim", (String) this.username.invoke(info), forceloaded);
 			String title = custom == null || custom.isEmpty() ? owner.getString() : custom + " - " + owner.getString();
 			Integer own = (Integer) this.subClaimsColour.invoke(info, sub);
-			return new Owner(title, (own != null ? own : (int) this.claimsColour.invoke(info)) & 0xFFFFFF, forceloadable, true);
+			return new Owner(id, title, (own != null ? own : (int) this.claimsColour.invoke(info)) & 0xFFFFFF, forceloadable, true);
 		}
 
 		/** One of its texts in the server's own language, as it words them for players without the mod. */

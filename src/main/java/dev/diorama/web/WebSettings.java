@@ -105,7 +105,9 @@ public record WebSettings(boolean enabled, int port, String address, @Nullable P
 			# true: the web map shows land claimed with FTB Chunks or Open Parties and Claims, in each
 			# owner's colour and with their name, as the map in the game does. Only claims every player
 			# is shown in the game: not an FTB team's whose claim visibility isn't public, nor other
-			# players' while Open Parties and Claims' claimsSynchronization isn't ALL.
+			# players' while Open Parties and Claims' claimsSynchronization isn't ALL. They come from
+			# Diorama's own web server (web-map-port), never from a file; behind a web server of your
+			# own, pass /claims.json on to that port.
 			# false: no claims on the web map.
 			""", "true"},
 	};

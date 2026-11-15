@@ -75,8 +75,8 @@ public final class WebMap {
 	private static final int BLEND_RADIUS = 2;
 	/** The most zoom levels out from the map's own tiles. */
 	private static final int MAX_ZOOM = 10;
-	/** A picture's file name: its place across and down. */
-	private static final java.util.regex.Pattern TILE_NAME = java.util.regex.Pattern.compile("-?[0-9]+_-?[0-9]+[.](jpg|png)");
+	/** A picture's file name, or its chunks file's (and that one's temporary file): its place across and down. */
+	private static final java.util.regex.Pattern TILE_NAME = java.util.regex.Pattern.compile("-?[0-9]+_-?[0-9]+[.](jpg|png|png[.]part)");
 	/** Set in the progress file once every picture has its {@link WebChunks}, for land claims. */
 	private static final String CLAIM_CHUNKS = "claim-chunks";
 
@@ -120,7 +120,8 @@ public final class WebMap {
 		// come from the map's own web server, so there are none to show without it.
 		this.players = settings.players() && settings.port() > 0 && ShareServer.locks(server).radarAllowed() ? new WebPlayers(server, this::leftOut) : null;
 		this.markers = new WebMarkers(server.getWorldPath(LevelResource.ROOT).resolve(WebMarkers.STORE), this.folder);
-		this.claims = settings.claims() ? WebClaims.of(server, this::leftOut, this.folder) : null;
+		// Claims, like players, come only from the map's own web server.
+		this.claims = settings.claims() && settings.port() > 0 ? WebClaims.of(server, this::leftOut) : null;
 		this.thread = new Thread(this::run, "Diorama web map");
 		this.thread.setDaemon(true);
 		this.thread.setPriority(Thread.MIN_PRIORITY);
@@ -177,8 +178,7 @@ public final class WebMap {
 		if (this.players != null) {
 			this.players.start();
 		}
-		// Claims from before (another setting, a mod since taken out) never stay: the page has what's read now.
-		WebClaims.delete(this.folder);
+		WebClaims.deleteOldFile(this.folder);
 		if (this.claims != null) {
 			this.claims.start();
 		}
@@ -278,7 +278,7 @@ public final class WebMap {
 			if (!Files.isDirectory(level, LinkOption.NOFOLLOW_LINKS)) {
 				continue;
 			}
-			try (DirectoryStream<Path> files = Files.newDirectoryStream(level, "*.{jpg,png}")) {
+			try (DirectoryStream<Path> files = Files.newDirectoryStream(level, "*.{jpg,png,part}")) {
 				for (Path file : files) {
 					if (TILE_NAME.matcher(file.getFileName().toString()).matches()) {
 						try {
@@ -351,7 +351,8 @@ public final class WebMap {
 			this.markers.publish(this::leftOut);
 			this.writeMapJson();
 			if (this.settings.port() > 0 && !this.stopping) {
-				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains, this.players == null ? null : this.players::json, this.markers::published);
+				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains, this.players == null ? null : this.players::json,
+						this.claims == null ? null : this.claims::answer, this.markers::published);
 				if (this.stopping) {
 					// The server stopped while the pictures were being deleted, and has looked for this already.
 					WebServer late = this.http;

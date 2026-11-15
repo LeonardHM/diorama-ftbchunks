@@ -105,12 +105,21 @@ final class WebChunks {
 		System.arraycopy(values, 0, ((DataBufferByte) image.getRaster().getDataBuffer()).getData(), 0, values.length);
 		Files.createDirectories(file.getParent());
 		Path part = file.resolveSibling(file.getFileName() + ".part");
-		try (OutputStream out = Files.newOutputStream(part)) {
-			if (!ImageIO.write(image, "png", out)) {
-				throw new IOException("this Java has no PNG writer");
+		try {
+			try (OutputStream out = Files.newOutputStream(part)) {
+				if (!ImageIO.write(image, "png", out)) {
+					throw new IOException("this Java has no PNG writer");
+				}
 			}
+			Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (IOException | RuntimeException e) {
+			// Out of disk, say: no half-written file stays behind.
+			try {
+				Files.deleteIfExists(part);
+			} catch (IOException ignored) {
+			}
+			throw e;
 		}
-		Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 	}
 
 	/** What a file holds, or null if there's none to read. */

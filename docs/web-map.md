@@ -50,7 +50,7 @@ Where players are is never written to the map's folder: Diorama's own web server
 
 ## Land claims
 
-On a server with FTB Chunks or Open Parties and Claims, the page shows claimed land the way Diorama's map in the game does: tinted in the owner's colour, with a stronger line where one owner's land meets another's or the wild, and force-loaded chunks tinted a little more. Point at a claim to see whose it is ("Claimed by Alex", or Open Parties and Claims' own title such as "Base - Alex's Claim"); on a phone, tap it.
+On a server with FTB Chunks or Open Parties and Claims, the page shows claimed land the way Diorama's map in the game does: tinted in the owner's colour, with a stronger line where one owner's land meets another's or the wild. FTB Chunks' force-loaded chunks and Open Parties and Claims' forceloadable ones are tinted a little more. Point at a claim to see whose it is ("Claimed by Alex", or Open Parties and Claims' own title such as "Base - Alex's Claim"); on a phone, tap it.
 
 The map looks down at an angle, so a chunk on a hilltop is drawn further up the picture than one at sea level. Each picture comes with a small file saying which chunk each part of it shows, so a claim sits on the ground it covers, hills and cliffs too, as in the game.
 
@@ -60,9 +60,11 @@ It shows only what every player already sees in the game:
 - Open Parties and Claims sends every player's claims to everyone only while its `claimsSynchronization` is `ALL` (its default). With `OWNED_ONLY` the page shows only server claims, and with `NOT_SYNCED` none.
 - Claims in a dimension the web map leaves out aren't on the page.
 
-The server reads the claims every couple of seconds and the page asks for them every 10, so a claim or unclaim shows within about 15 seconds. They're in `claims.json` beside the pictures.
+The server reads the claims every couple of seconds, a little at a time between ticks, and the page asks for them every 10 seconds, so changes show within about 15 seconds, longer on a server with very many claims. `/diorama-web status` says how many claimed chunks the page has and what reading them costs.
 
-The first time the server starts with claims to show, it draws the whole map again once, so every picture has its file of chunks. The same happens if you turn `web-map-claims` back on later.
+Claims are never written to the map's folder: Diorama's own web server answers `claims.json` from memory, as it does `players.json`, so an unclaimed chunk or a team that hid its claims is gone from the page at the next read, and nothing is left behind when the server stops or you turn claims off. If you serve the folder yourself, the page shows claims only when your web server passes that one address on to Diorama's (see below); with `web-map-port=0` it shows none.
+
+The first time the server starts with FTB Chunks or Open Parties and Claims installed and `web-map-claims` on, it draws the whole map again once, so every picture has its file of chunks. Pictures drawn while claims were off don't keep that file, so turning `web-map-claims` off and on again later draws the whole map again too.
 
 `web-map-claims=false` turns them off.
 
@@ -80,7 +82,7 @@ These aren't players' waypoints, which stay on each player's own computer; the p
 
 ## Serving it yourself
 
-The folder is a plain static site: `index.html`, `map.json`, `markers.json` and the pictures, one JPEG per tile in `<dimension>/<zoom>/<x>_<y>.jpg`. With land claims shown there's also `claims.json`, and a small PNG beside each picture saying which chunk each part of it shows. Point nginx, Caddy or any web server at it and set `web-map-port=0`. For example with nginx:
+The folder is a plain static site: `index.html`, `map.json`, `markers.json` and the pictures, one JPEG per tile in `<dimension>/<zoom>/<x>_<y>.jpg`. With land claims shown there's also a small PNG beside each picture saying which chunk each part of it shows. Point nginx, Caddy or any web server at it and set `web-map-port=0`. For example with nginx:
 
 ```nginx
 location /map/ {
@@ -88,11 +90,14 @@ location /map/ {
 }
 ```
 
-To have players on a page you serve yourself, keep Diorama's web server on, reachable from the same machine only (`web-map-port=8100`, `web-map-address=127.0.0.1`), and pass the one address on:
+To have players and land claims on a page you serve yourself, keep Diorama's web server on, reachable from the same machine only (`web-map-port=8100`, `web-map-address=127.0.0.1`), and pass those two addresses on:
 
 ```nginx
 location = /map/players.json {
     proxy_pass http://127.0.0.1:8100/players.json;
+}
+location = /map/claims.json {
+    proxy_pass http://127.0.0.1:8100/claims.json;
 }
 ```
 

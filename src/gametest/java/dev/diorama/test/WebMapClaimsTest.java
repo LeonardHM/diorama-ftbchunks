@@ -30,17 +30,22 @@ import net.minecraft.world.level.levelgen.Heightmap;
  * server claim), and a patch in the Nether. Then:
  *
  * <ul>
- * <li>{@code claims.json} lists those chunks with the owner's name and colour, the middle as force loaded;
+ * <li>{@code /claims.json}, which Diorama's own web server answers from memory, lists those chunks
+ *     with the owner's name and colour, the middle as force loaded; a {@code claims.json} file left
+ *     in the map's folder is deleted and never served;
  * <li>the file beside each picture says the pixels on the grass and on the hill's top show the chunks
  *     they are of (a flat outline at sea level would be two chunks off on the hilltop);
  * <li>the page is photographed over both, and the map in the game beside it;
  * <li>unclaiming the grass takes it out, and claims the mod hides from other players (an FTB team's
  *     claim visibility, Open Parties and Claims' claimsSynchronization) aren't there;
- * <li>with the Nether off the map ({@code map-off-dimensions}) its claims aren't listed, and with
- *     {@code web-map-claims=false} there is no claims file and the map file doesn't offer one.
+ * <li>with the Nether off the map ({@code map-off-dimensions}) its claims aren't listed (with Open
+ *     Parties and Claims' {@code OWNED_ONLY}, the player's own Overworld claim neither), and with
+ *     {@code web-map-claims=false} nothing answers and the map file doesn't offer claims;
+ * <li>with {@code DIORAMA_CLAIMS_BENCH=1}, what reading thousands of claims costs the server
+ *     thread, side by side and each in a region of its own.
  * </ul>
  *
- * Photographs go into {@code screenshots/web-map-claims/}.
+ * No claims file is ever in the map's folder. Photographs go into {@code screenshots/web-map-claims/}.
  */
 final class WebMapClaimsTest {
 	private static final String FOLDER = "minecraft_overworld";
@@ -50,6 +55,8 @@ final class WebMapClaimsTest {
 	 * visibility; a player's own team's settings are commands only its player may give.
 	 */
 	private static final String TEAM = "Homestead";
+	/** An owner in the claims JSON, up to its name: the owner's id first. */
+	private static final String OWNER = "\\{\"id\":\"[^\"]+\",";
 
 	private WebMapClaimsTest() {
 	}
@@ -129,26 +136,34 @@ final class WebMapClaimsTest {
 			RealServer.leave(context);
 		}
 
+		// A claims file an earlier build left, under two spellings: deleted or never served.
+		Path folder = home.resolve("world").resolve("diorama-web");
+		String planted = "{\"dimensions\":[{\"id\":\"minecraft:overworld\",\"owners\":[{\"name\":\"Planted\",\"color\":\"#00ff00\"}],\"chunks\":[0,0,0]}]}";
+		write(folder.resolve("claims.json"), planted);
+		write(folder.resolve("Claims.json"), planted);
 		write(config, base);
 		try (RealServer server = RealServer.start(true)) {
 			waitForPass(context, http, port, server);
 			server.join(context);
 			String map = waitForText(context, http, port, "/map.json", "\"claims\":true", 400);
 			String claims = waitForText(context, http, port, "/claims.json", "\"minecraft:the_nether\"", 400);
+			expect(wrong, !claims.contains("Planted"), mod + ": the claims file left in the map's folder is served: " + cut(claims));
+			expect(wrong, status(http, port, "/Claims.json") == 404, mod + ": a claims file is served under another spelling: " + cut(get(http, port, "/Claims.json")));
+			noFile(wrong, folder, mod + ": with claims shown");
 			check(wrong, claims, flat, true, mod + ": the grass");
 			check(wrong, claims, hill, true, mod + ": the hill");
 			expect(wrong, !listed(claims, "minecraft:overworld").contains(key(flat[0] - 2, flat[1])) && !listed(claims, "minecraft:overworld").contains(key(hill[0] + 2, hill[1])),
 				mod + ": land between the claims is listed as claimed: " + cut(claims));
 			expect(wrong, listed(claims, "minecraft:the_nether").contains(key(0, 0)), mod + ": the Nether's claim isn't listed: " + cut(claims));
 			if (ftb) {
-				expect(wrong, claims.contains("{\"name\":\"" + TEAM + "\",\"color\":\"" + RED + "\"}"), "FTB Chunks: the server team isn't listed by name in its colour: " + cut(claims));
-				expect(wrong, Pattern.compile("\\{\"name\":\"" + Pattern.quote(me) + "\",\"color\":\"#[0-9a-f]{6}\"\\}").matcher(claims).find(), "FTB Chunks: the player's team isn't listed by name: " + cut(claims));
-				expect(wrong, Pattern.compile("\\{\"name\":\"" + Pattern.quote(me) + "\",\"color\":\"#[0-9a-f]{6}\",\"forced\":true\\}").matcher(claims).find(), "FTB Chunks: the force loaded chunk isn't listed as force loaded: " + cut(claims));
+				expect(wrong, Pattern.compile(OWNER + "\"name\":\"" + TEAM + "\",\"color\":\"" + RED + "\"\\}").matcher(claims).find(), "FTB Chunks: the server team isn't listed by name in its colour: " + cut(claims));
+				expect(wrong, Pattern.compile(OWNER + "\"name\":\"" + Pattern.quote(me) + "\",\"color\":\"#[0-9a-f]{6}\"\\}").matcher(claims).find(), "FTB Chunks: the player's team isn't listed by name: " + cut(claims));
+				expect(wrong, Pattern.compile(OWNER + "\"name\":\"" + Pattern.quote(me) + "\",\"color\":\"#[0-9a-f]{6}\",\"forced\":true\\}").matcher(claims).find(), "FTB Chunks: the force loaded chunk isn't listed as force loaded: " + cut(claims));
 			} else {
-				expect(wrong, Pattern.compile("\\{\"name\":\"" + Pattern.quote(me) + "'s Claim\",\"color\":\"#[0-9a-f]{6}\",\"titled\":true\\}").matcher(claims).find(),
+				expect(wrong, Pattern.compile(OWNER + "\"name\":\"" + Pattern.quote(me) + "'s Claim\",\"color\":\"#[0-9a-f]{6}\",\"titled\":true\\}").matcher(claims).find(),
 					"Open Parties and Claims: the player's claim isn't titled as the mod words it: " + cut(claims));
-				expect(wrong, claims.contains("{\"name\":\"" + me + "'s Claim (Forceloadable)\""), "Open Parties and Claims: the force loadable chunk isn't titled so: " + cut(claims));
-				expect(wrong, claims.contains("{\"name\":\"Server Claim\""), "Open Parties and Claims: the server claim isn't titled so: " + cut(claims));
+				expect(wrong, claims.contains("\"name\":\"" + me + "'s Claim (Forceloadable)\""), "Open Parties and Claims: the force loadable chunk isn't titled so: " + cut(claims));
+				expect(wrong, claims.contains("\"name\":\"Server Claim\""), "Open Parties and Claims: the server claim isn't titled so: " + cut(claims));
 			}
 			// The pixels on the grass and on the hilltop say they show the chunk they're of.
 			lined(wrong, http, port, flat, "the grass");
@@ -158,12 +173,12 @@ final class WebMapClaimsTest {
 
 			// Both claims on the page, and each up close.
 			double middleU = (flat[0] + hill[0]) * 8 + 8;
-			ClientWebMapTest.photograph(page + view(middleU, flat[1] * 16 + 8, flat[2] + 10, 4), out.resolve("1-both.png"));
-			ClientWebMapTest.photograph(page + view(flat[0] * 16 + 8, flat[1] * 16 + 8, flat[2], 8), out.resolve("2-grass.png"));
-			ClientWebMapTest.photograph(page + view(hill[0] * 16 + 8, hill[1] * 16 + 8, hill[2], 8), out.resolve("3-hill.png"));
+			photograph(page + view(middleU, flat[1] * 16 + 8, flat[2] + 10, 4), out.resolve("1-both.png"));
+			photograph(page + view(flat[0] * 16 + 8, flat[1] * 16 + 8, flat[2], 8), out.resolve("2-grass.png"));
+			photograph(page + view(hill[0] * 16 + 8, hill[1] * 16 + 8, hill[2], 8), out.resolve("3-hill.png"));
 			// Whose it is: the mouse over the hilltop, in the middle of the page; a tap on a phone on the grass's force loaded middle.
-			ClientWebMapTest.photograph(page + view(hill[0] * 16 + 8, hill[1] * 16 + 8, hill[2], 8), out.resolve("3-hill-pointer.png"), "--hover", "640,328");
-			ClientWebMapTest.photograph(page + view(flat[0] * 16 + 8, flat[1] * 16 + 8, flat[2], 4), out.resolve("2-grass-phone-tap.png"), "--phone", "--tap", "195,422");
+			photograph(page + view(hill[0] * 16 + 8, hill[1] * 16 + 8, hill[2], 8), out.resolve("3-hill-pointer.png"), "--hover", "640,328");
+			photograph(page + view(flat[0] * 16 + 8, flat[1] * 16 + 8, flat[2], 4), out.resolve("2-grass-phone-tap.png"), "--phone", "--tap", "195,422");
 			// The map in the game, over the same land.
 			server.command("tp " + me + " " + (int) middleU + " " + (flat[2] + 1) + " " + (flat[1] * 16 + 8));
 			context.waitTicks(100);
@@ -181,43 +196,34 @@ final class WebMapClaimsTest {
 
 			// The grass unclaimed: off the page.
 			if (ftb) {
-				server.command("tp " + me + " " + (flat[0] * 16 + 8) + " " + (flat[2] + 1) + " " + (flat[1] * 16 + 8));
-				context.waitTicks(40);
+				at(context, server, me, flat);
 				server.command("execute as " + me + " at " + me + " run ftbchunks unload 0");
 				server.command("execute as " + me + " at " + me + " run ftbchunks unclaim 16");
 			} else {
-				server.command("tp " + me + " " + (flat[0] * 16 + 8) + " " + (flat[2] + 1) + " " + (flat[1] * 16 + 8));
-				context.waitTicks(40);
+				at(context, server, me, flat);
 				DioramaClientTest.opacRequest(context, "requestAreaUnclaim", flat[0] - 1, flat[1] - 1, flat[0] + 1, flat[1] + 1, false);
 			}
 			String unclaimed = waitForNo(context, http, port, key(flat[0] + 1, flat[1] + 1), wrong, mod + ": the unclaimed grass");
 			check(wrong, unclaimed, flat, false, mod + ": the unclaimed grass");
 			check(wrong, unclaimed, hill, true, mod + ": the hill after the grass was unclaimed");
-			ClientWebMapTest.photograph(page + view(flat[0] * 16 + 8, flat[1] * 16 + 8, flat[2], 8), out.resolve("4-grass-unclaimed.png"));
+			photograph(page + view(flat[0] * 16 + 8, flat[1] * 16 + 8, flat[2], 8), out.resolve("4-grass-unclaimed.png"));
 			if (ftb) {
 				// A team that hides its claims from other teams: off the page, and back once it shows them.
 				server.command("ftbteams server settings " + team + " ftbchunks:claim_visibility private");
 				String hidden = waitForNo(context, http, port, key(hill[0], hill[1]), wrong, "FTB Chunks: a team's claims hidden from other teams");
 				expect(wrong, !hidden.contains(TEAM), "FTB Chunks: a team hiding its claims is still named: " + cut(hidden));
+				noFile(wrong, folder, "FTB Chunks: with a team's claims hidden");
 				server.command("ftbteams server settings " + team + " ftbchunks:claim_visibility public");
 				waitForListed(context, http, port, key(hill[0], hill[1]), "FTB Chunks: the hill once its team shows its claims again");
 			}
 			expect(wrong, map.contains("\"claims\":true"), "the map file doesn't offer claims");
-			if (ftb) {
-				// What reading many claims costs the server thread: a server team's 4,096 chunks far off.
-				server.command("ftbchunks admin claim_as " + team + " 512 " + (hill[0] * 16 - 2000) + " " + (hill[1] * 16));
-				waitForListed(context, http, port, key(hill[0] - 125, hill[1]), "FTB Chunks: 4,096 chunks claimed far off");
-				// A few reads, the first ones with the code still cold.
-				for (int i = 0; i < 8; i++) {
-					context.waitTicks(i < 4 ? 80 : 300);
-					server.command("diorama-web status");
-					context.waitTicks(20);
-					String console = server.console();
-					int said = console.lastIndexOf("Web map: ");
-					dev.diorama.Diorama.LOGGER.info("web-map-claims: with 4,096 more claimed chunks the server says {}", said < 0 ? "nothing" : console.substring(said, console.indexOf('\n', said)));
-				}
-				server.command("ftbchunks admin unclaim_as " + team + " 512 " + (hill[0] * 16 - 2000) + " " + (hill[1] * 16));
-				waitForNo(context, http, port, key(hill[0] - 125, hill[1]), wrong, "FTB Chunks: the 4,096 chunks unclaimed");
+			if (opac) {
+				// The player's own claim in the Overworld again, which OWNED_ONLY takes off the page below.
+				DioramaClientTest.opacRequest(context, "requestAreaClaim", flat[0], flat[1], flat[0], flat[1], false);
+				waitForListed(context, http, port, key(flat[0], flat[1]), "Open Parties and Claims: the player's claim made again");
+			}
+			if (System.getenv("DIORAMA_CLAIMS_BENCH") != null) {
+				bench(context, server, http, port, ftb, team, hill);
 			}
 			RealServer.leave(context);
 		}
@@ -232,12 +238,14 @@ final class WebMapClaimsTest {
 			String claims = waitForText(context, http, port, "/claims.json", "minecraft:overworld", 600);
 			expect(wrong, !claims.contains("minecraft:the_nether"), mod + ": the Nether is off the map and its claims are listed: " + cut(claims));
 			if (opac) {
-				expect(wrong, claims.contains("\"Server Claim\"") && !claims.contains("'s Claim"),
+				expect(wrong, claims.contains("\"Server Claim\"") && !claims.contains("'s Claim") && !listed(claims, "minecraft:overworld").contains(key(flat[0], flat[1])),
 					"Open Parties and Claims: with claimsSynchronization OWNED_ONLY, the page should have only the server's claims: " + cut(claims));
+				check(wrong, claims, hill, true, "Open Parties and Claims: the server's claim on the hill, with OWNED_ONLY");
 				setOpacSync(home, "ALL");
 			} else {
 				check(wrong, claims, hill, true, "FTB Chunks: the hill, with the Nether off the map");
 			}
+			noFile(wrong, folder, mod + ": with the Nether off the map");
 		}
 
 		// Turned off by the owner: no claims file, and the page isn't told of one.
@@ -246,8 +254,11 @@ final class WebMapClaimsTest {
 			String map = waitForText(context, http, port, "/map.json", "\"players\":", 600);
 			context.waitTicks(100);
 			expect(wrong, !map.contains("\"claims\""), "with web-map-claims=false, the map file offers claims: " + cut(map));
-			expect(wrong, status(http, port, "/claims.json") == 404, "with web-map-claims=false, claims.json is served: " + cut(get(http, port, "/claims.json")));
-			ClientWebMapTest.photograph(page + view(hill[0] * 16 + 8, hill[1] * 16 + 8, hill[2], 8), out.resolve("5-claims-off.png"));
+			String off = get(http, port, "/claims.json");
+			expect(wrong, status(http, port, "/claims.json") == 404, "with web-map-claims=false, claims.json is answered: " + cut(off));
+			expect(wrong, !off.contains(TEAM) && !off.contains(me) && !off.contains("Server Claim"), "with web-map-claims=false, claims.json names owners: " + cut(off));
+			noFile(wrong, folder, "with web-map-claims=false");
+			photograph(page + view(hill[0] * 16 + 8, hill[1] * 16 + 8, hill[2], 8), out.resolve("5-claims-off.png"));
 		}
 
 		try {
@@ -321,8 +332,7 @@ final class WebMapClaimsTest {
 
 	/** The player's FTB team claims the three chunks by three round {@code area}, the middle force loaded if asked. */
 	private static void claimFtb(ClientGameTestContext context, RealServer server, String me, int[] area, boolean forceLoadMiddle) {
-		server.command("tp " + me + " " + (area[0] * 16 + 8) + " " + (area[2] + 1) + " " + (area[1] * 16 + 8));
-		context.waitTicks(40);
+		at(context, server, me, area);
 		server.command("execute as " + me + " at " + me + " run ftbchunks claim 16");
 		if (forceLoadMiddle) {
 			server.command("execute as " + me + " at " + me + " run ftbchunks load 0");
@@ -332,10 +342,21 @@ final class WebMapClaimsTest {
 
 	/** The player claims the three chunks by three round {@code area}, through Open Parties and Claims' client API, as the server if asked. */
 	private static void claimOpac(ClientGameTestContext context, RealServer server, String me, int[] area, boolean byServer) {
-		server.command("tp " + me + " " + (area[0] * 16 + 8) + " " + (area[2] + 1) + " " + (area[1] * 16 + 8));
-		context.waitTicks(60);
+		at(context, server, me, area);
+		context.waitTicks(20);
 		DioramaClientTest.opacRequest(context, "requestAreaClaim", area[0] - 1, area[1] - 1, area[0] + 1, area[1] + 1, byServer);
 		context.waitTicks(60);
+	}
+
+	/**
+	 * Teleports the player to the middle of the chunk {@code area} names and waits until the client
+	 * is there: a busy server can read several console commands at once well after they were given,
+	 * and a claim asked for from the wrong place is refused as too far.
+	 */
+	private static void at(ClientGameTestContext context, RealServer server, String me, int[] area) {
+		server.command("tp " + me + " " + (area[0] * 16 + 8) + " " + (area[2] + 1) + " " + (area[1] * 16 + 8));
+		context.waitFor(mc -> mc.player != null && mc.player.blockPosition().getX() >> 4 == area[0] && mc.player.blockPosition().getZ() >> 4 == area[1], 2400);
+		context.waitTicks(20);
 	}
 
 	/** Sets Open Parties and Claims' claimsSynchronization in the server's config, for its next start. */
@@ -423,6 +444,81 @@ final class WebMapClaimsTest {
 			}
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
+		}
+	}
+
+	/** Photographs the page; a photograph that couldn't be taken fails the test. */
+	private static void photograph(String address, Path file, String... options) {
+		if (!ClientWebMapTest.photograph(address, file, options)) {
+			throw new AssertionError("No photograph of " + address + " was taken (no Chromium on this machine?)");
+		}
+	}
+
+	/** Says in {@code wrong} if a claims file is in the map's folder: claims are only ever in memory. */
+	private static void noFile(List<String> wrong, Path folder, String when) {
+		for (String name : new String[] {"claims.json", "claims.json.part"}) {
+			if (Files.exists(folder.resolve(name))) {
+				wrong.add(when + ": there's a " + name + " in the map's folder " + folder);
+			}
+		}
+	}
+
+	/**
+	 * What reading many claims costs the server thread, from the status command: 4,096 chunks side by
+	 * side, then 2,000 chunks each in a region of its own, all the server's (an FTB server team's).
+	 * Logged; each set is unclaimed after.
+	 */
+	private static void bench(ClientGameTestContext context, RealServer server, HttpClient http, int port, boolean ftb, String team, int[] hill) {
+		int x0 = hill[0] * 16 - 3000;
+		int z0 = hill[1] * 16;
+		// Side by side: 64 by 64 chunks.
+		if (ftb) {
+			server.command("ftbchunks admin claim_as " + team + " 512 " + x0 + " " + z0);
+		} else {
+			server.command("oclaims server claim in minecraft:overworld " + (x0 - 512) + " " + (z0 - 512) + " " + (x0 + 511) + " " + (z0 + 511) + " anyway");
+		}
+		waitForListed(context, http, port, key((x0 + 500) >> 4, (z0 + 500) >> 4), "4,096 chunks claimed side by side");
+		benchReads(context, server, "4,096 chunks side by side");
+		if (ftb) {
+			server.command("ftbchunks admin unclaim_as " + team + " 512 " + x0 + " " + z0);
+		} else {
+			server.command("oclaims server unclaim in minecraft:overworld " + (x0 - 512) + " " + (z0 - 512) + " " + (x0 + 511) + " " + (z0 + 511) + " anyway");
+		}
+		List<String> wrong = new ArrayList<>();
+		waitForNo(context, http, port, key((x0 + 500) >> 4, (z0 + 500) >> 4), wrong, "4,096 chunks unclaimed");
+		// Each in a region of its own: 2,000 chunks 512 blocks apart, a field of 50 by 40 regions.
+		List<String> commands = new ArrayList<>();
+		int last = 0;
+		for (int i = 0; i < 2000; i++) {
+			int x = x0 - 40_000 + (i % 50) * 512 + 8;
+			int z = z0 + (i / 50) * 512 + 8;
+			commands.add(ftb ? "ftbchunks admin claim_as " + team + " 0 " + x + " " + z
+				: "oclaims server claim in minecraft:overworld " + x + " " + z + " " + x + " " + z + " anyway");
+			if (commands.size() == 250 || i == 1999) {
+				server.command(String.join("\n", commands));
+				commands.clear();
+				context.waitTicks(20);
+			}
+			last = i;
+		}
+		int lastX = x0 - 40_000 + (last % 50) * 512 + 8;
+		int lastZ = z0 + (last / 50) * 512 + 8;
+		waitForListed(context, http, port, key(lastX >> 4, lastZ >> 4), "2,000 chunks each in a region of its own");
+		String claims = get(http, port, "/claims.json");
+		dev.diorama.Diorama.LOGGER.info("web-map-claims bench: {} chunks listed in the Overworld with 2,000 apart", listed(claims, "minecraft:overworld").size());
+		benchReads(context, server, "2,000 chunks each in a region of its own");
+		wrong.forEach(w -> dev.diorama.Diorama.LOGGER.warn("web-map-claims bench: {}", w));
+	}
+
+	/** A few reads' costs as the status command says them, the first ones with the code still cold. */
+	private static void benchReads(ClientGameTestContext context, RealServer server, String what) {
+		for (int i = 0; i < 8; i++) {
+			context.waitTicks(i < 4 ? 80 : 300);
+			server.command("diorama-web status");
+			context.waitTicks(20);
+			String console = server.console();
+			int said = console.lastIndexOf("Web map: ");
+			dev.diorama.Diorama.LOGGER.info("web-map-claims bench: with {} the server says {}", what, said < 0 ? "nothing" : console.substring(said, console.indexOf('\n', said)));
 		}
 	}
 

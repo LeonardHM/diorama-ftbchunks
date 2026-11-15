@@ -70,9 +70,8 @@ let markers = [];
 // The server's map, when it shows them (map.players): everyone online it doesn't leave out, from players.json.
 let players = [];
 // Land claims, when the server's map shows them (map.claims): per dimension, its owners and which
-// chunk (in the pictures' turned space) each owns, from claims.json.
+// chunk (in the pictures' turned space) each owns, from claims.json. Null before the first answer.
 let claims = null;
-let claimsText = "";
 let claimsVersion = 0;
 
 function tileUnits(z) { return map.tileUnits * (1 << z); }
@@ -88,7 +87,7 @@ function load(first) {
 		if (!map.live) loadMarkers();
 		if (!map.live && map.players && !asking) startPlayers();
 		if (map.claims && !askingClaims) startClaims();
-		if (!map.claims && claims) { claims = null; claimsText = ""; claimsVersion++; hideClaim(); draw(); }
+		if (!map.claims && claims) { claims = null; claimsTag = ""; claimsVersion++; overlays.clear(); hideClaim(); draw(); }
 		// Turned off since: gone now, not at the next answer.
 		if (!map.players && players.length) showPlayers([]);
 	}).catch(() => {}).finally(() => { clearTimeout(loadTimer); loadTimer = setTimeout(() => load(false), map && map.live ? 3000 : 30000); });
@@ -202,35 +201,54 @@ document.getElementById("peopleButton").onclick = () => {
 };
 
 // Who owns which land, asked for every 10 seconds while the page shows: claims change seldom, and
-// the server answers "not changed" when they haven't.
+// the server answers "not changed" (204) when the page has its latest. They come only from the
+// server's memory: an answer that doesn't come, or isn't claims, counts as none.
 let askingClaims = false;
+let claimsTag = "";
 function startClaims() {
 	askingClaims = true;
 	const ask = () => {
 		if (!map.claims) { askingClaims = false; return; }
 		if (document.hidden) { setTimeout(ask, 2000); return; }
-		fetch("claims.json", { cache: "no-cache" }).then(r => r.ok ? r.text() : "").then(text => {
-			if (text === claimsText) return;
-			claimsText = text;
-			let json = null;
-			try { json = text ? JSON.parse(text) : null; } catch (e) { json = null; }
-			const dims = new Map();
-			for (const d of (json && Array.isArray(json.dimensions)) ? json.dimensions : []) {
-				const owners = (d.owners || []).map(o => ({ name: String(o.name || ""), color: /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : "#ffffff",
-					rgb: parseInt(String(o.color || "#ffffff").slice(1), 16) || 0, forced: !!o.forced, titled: !!o.titled }));
-				const at = new Map();
-				const c = d.chunks || [];
-				for (let i = 0; i + 2 < c.length; i += 3) if (owners[c[i + 2]]) at.set(c[i] + "," + c[i + 1], c[i + 2] + 1);
-				dims.set(d.id, { owners, at });
-			}
-			claims = dims;
-			claimsVersion++;
-			overlays.clear();
-			hideClaim();
-			draw();
-		}).catch(() => {}).finally(() => setTimeout(ask, 10000));
+		let again = 10000;
+		fetch("claims.json" + (claimsTag ? "?since=" + encodeURIComponent(claimsTag) : ""), { cache: "no-store" }).then(r => {
+			if (r.status === 204 && claims) return null;
+			if (!r.ok || r.status === 204) throw new Error("claims: " + r.status);
+			return r.json();
+		}).then(json => { if (json) showClaims(json); })
+			.catch(() => { again = 5000; showClaims(null); })
+			.finally(() => setTimeout(ask, again));
 	};
 	ask();
+}
+function showClaims(json) {
+	// None again: nothing to paint over.
+	if (!json && claims && !claims.size && !claimsTag) return;
+	claimsTag = json && typeof json.version === "string" ? json.version : "";
+	const dims = new Map();
+	for (const d of (json && Array.isArray(json.dimensions)) ? json.dimensions : []) {
+		// Owners told apart by their id, however they're named and coloured, so there's an edge
+		// between any two. The same id twice is one owner (its force loaded chunks, or forceloadable, apart).
+		const owners = [], index = new Map(), slot = [];
+		for (const o of Array.isArray(d.owners) ? d.owners : []) {
+			const id = (o.id ? String(o.id) : "#" + slot.length) + (o.forced ? "!" : "");
+			if (!index.has(id)) {
+				index.set(id, owners.length);
+				owners.push({ name: String(o.name || ""), color: /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : "#ffffff",
+					rgb: parseInt(String(o.color || "#ffffff").slice(1), 16) || 0, forced: !!o.forced, titled: !!o.titled });
+			}
+			slot.push(index.get(id));
+		}
+		const at = new Map();
+		const c = Array.isArray(d.chunks) ? d.chunks : [];
+		for (let i = 0; i + 2 < c.length; i += 3) if (slot[c[i + 2]] !== undefined) at.set(c[i] + "," + c[i + 1], slot[c[i + 2]] + 1);
+		dims.set(d.id, { owners, at });
+	}
+	claims = dims;
+	claimsVersion++;
+	overlays.clear();
+	hideClaim();
+	draw();
 }
 /** The claims of the dimension shown, or null when it has none. */
 function dimClaims() {
@@ -242,59 +260,97 @@ function dimClaims() {
 // per block across at zoom 0 and a row per picture row, each 128 plus how many chunks south the
 // ground is of where the row crosses height 64, 0 where the picture shows nothing.
 const CHUNK_COLUMNS = 128;
-const chunkData = new Map();   // tile key -> { state, data, ver }
+const chunkData = new Map();   // tile key -> { state, data, ver, tries, retry, prev }
 const overlays = new Map();    // tile key -> { canvas, ver, claims, north, south }
-function chunksOf(z, u, v) {
+/**
+ * A picture's chunks, as { data, ver }, or null while they're on their way or it has none. While a
+ * picture drawn again has its new file on the way, the one before is given, as the old picture shows.
+ */
+function chunkEntry(z, u, v) {
 	const key = tileKey(z, u, v);
 	const ver = present[z] && present[z].get(u + "," + v);
 	if (ver === undefined) return null;
 	let c = chunkData.get(key);
-	if (c && c.ver === ver) return c.state === "ready" ? c.data : null;
-	if (c && c.state === "loading" && c.ver === ver) return null;
-	c = { state: "loading", data: null, ver };
+	const shown = c => !c ? null : c.state === "ready" ? (c.data ? c : null) : c.prev;
+	if (c && c.ver === ver && (c.state !== "failed" || c.retry > performance.now())) return shown(c);
+	const prev = shown(c);
+	c = { state: "loading", data: null, ver, tries: c && c.ver === ver ? c.tries : 0, retry: 0, prev: prev ? { data: prev.data, ver: prev.ver } : null };
 	chunkData.set(key, c);
-	const img = new Image();
-	img.onload = () => {
-		const off = document.createElement("canvas");
-		off.width = img.width; off.height = img.height;
-		const g = off.getContext("2d", { willReadFrequently: true });
-		g.drawImage(img, 0, 0);
-		const rgba = g.getImageData(0, 0, img.width, img.height).data;
-		const data = new Uint8Array(img.width * img.height);
-		for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4];
-		c.data = img.width === CHUNK_COLUMNS && img.height === map.tilePixels ? data : null;
-		c.state = "ready";
+	const mine = c;
+	fetch(key + ".png?v=" + ver).then(r => {
+		// None: a picture drawn before claims were shown, or with nothing on it. No claims on it until it's drawn again.
+		if (r.status === 404) return null;
+		if (!r.ok) throw new Error("chunks: " + r.status);
+		return r.blob().then(b => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }));
+	}).then(img => {
+		if (chunkData.get(key) !== mine) return;
+		let data = null;
+		if (img) {
+			const off = document.createElement("canvas");
+			off.width = img.width; off.height = img.height;
+			const g = off.getContext("2d", { willReadFrequently: true });
+			g.drawImage(img, 0, 0);
+			const rgba = g.getImageData(0, 0, img.width, img.height).data;
+			data = new Uint8Array(img.width * img.height);
+			for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4];
+			if (img.width !== CHUNK_COLUMNS || img.height !== map.tilePixels) data = null;
+			if (img.close) img.close();
+		}
+		mine.data = data; mine.state = "ready"; mine.prev = null;
 		draw();
-	};
-	// A picture drawn before claims were shown has none: no claims on it until it's drawn again.
-	img.onerror = () => { c.state = "ready"; c.data = null; };
-	img.src = key + ".png?v=" + ver;
-	if (chunkData.size > 600) for (const [k, t] of chunkData) { if (chunkData.size <= 400) break; if (k !== key) chunkData.delete(k); }
-	return null;
+	}).catch(() => {
+		// A server or proxy too busy for a moment: again shortly, later and later, as the pictures are.
+		if (chunkData.get(key) !== mine) return;
+		mine.state = "failed"; mine.tries++;
+		const wait = Math.min(30000, 500 * Math.pow(2, mine.tries));
+		mine.retry = performance.now() + wait;
+		setTimeout(draw, wait + 10);
+	});
+	return shown(c);
 }
+function chunksOf(z, u, v) { const e = chunkEntry(z, u, v); return e ? e.data : null; }
 /** The chunk x of a picture's column, and the chunk where its row crosses height 64. */
 function chunkX(z, u, column) { const units = tileUnits(z); return Math.floor(Math.floor(u * units + (column + 0.5) * units / CHUNK_COLUMNS) / 16); }
 function chunkBase(z, v, row) { const units = tileUnits(z); const mv = v * units + (row + 0.5) * units / map.tilePixels; return Math.floor(Math.floor((mv + 64 * map.cos) / map.sin) / 16); }
 
 // The claims painted on a picture, as the map in the game paints them: every pixel showing claimed
 // ground in its owner's colour, see-through, and stronger along the edges where the owner changes.
-// Force loaded land is tinted a little more. Light enough that the ground reads through it.
+// FTB Chunks' force loaded land and Open Parties and Claims' forceloadable land are tinted a little
+// more. Light enough that the ground reads through it.
 const FILL_ALPHA = 0x33, FORCED_ALPHA = 0x52, EDGE_ALPHA = 0xCC;
 function overlay(z, u, v) {
 	const c = dimClaims();
 	if (!c) return null;
-	const data = chunksOf(z, u, v);
-	if (!data) return null;
+	const own = chunkEntry(z, u, v);
+	if (!own) return null;
 	const key = tileKey(z, u, v);
-	const north = present[z] && present[z].has(u + "," + (v - 1)) ? chunksOf(z, u, v - 1) : null;
-	const south = present[z] && present[z].has(u + "," + (v + 1)) ? chunksOf(z, u, v + 1) : null;
-	const ver = present[z].get(u + "," + v);
-	let o = overlays.get(key);
-	if (o && o.ver === ver && o.claims === claimsVersion && o.north === !!north && o.south === !!south) return o.canvas;
-	const canvas = paintClaims(z, u, v, data, north, south, c);
-	overlays.set(key, { canvas, ver, claims: claimsVersion, north: !!north, south: !!south });
-	if (overlays.size > 160) for (const k of overlays.keys()) { if (overlays.size <= 120) break; if (k !== key) overlays.delete(k); }
+	// The pictures above and below, as far as they're in: their edge rows say where an owner changes
+	// across the border, so either one drawn again paints this one again.
+	const north = present[z].has(u + "," + (v - 1)) ? chunkEntry(z, u, v - 1) : null;
+	const south = present[z].has(u + "," + (v + 1)) ? chunkEntry(z, u, v + 1) : null;
+	const northVer = north ? north.ver : null, southVer = south ? south.ver : null;
+	const o = overlays.get(key);
+	if (o && o.ver === own.ver && o.claims === claimsVersion && o.north === northVer && o.south === southVer) return o.canvas;
+	const canvas = paintClaims(z, u, v, own.data, north && north.data, south && south.data, c);
+	overlays.set(key, { canvas, ver: own.ver, claims: claimsVersion, north: northVer, south: southVer });
 	return canvas;
+}
+/**
+ * Keeps the claims painted and the chunks files read for the pictures on screen (and the chunks of
+ * those above and below them), and forgets the rest once there are many.
+ */
+function trimClaims(z, sharp) {
+	const onScreen = new Set(), near = new Set();
+	for (const [u, v] of sharp) {
+		onScreen.add(tileKey(z, u, v));
+		for (const dv of [-1, 0, 1]) near.add(tileKey(z, u, v + dv));
+	}
+	if (overlays.size > onScreen.size + 24) {
+		for (const k of overlays.keys()) { if (overlays.size <= onScreen.size + 8) break; if (!onScreen.has(k)) overlays.delete(k); }
+	}
+	if (chunkData.size > near.size + 300) {
+		for (const [k, c] of chunkData) { if (chunkData.size <= near.size + 200) break; if (!near.has(k) && c.state !== "loading") chunkData.delete(k); }
+	}
 }
 function paintClaims(z, u, v, data, north, south, c) {
 	const size = map.tilePixels, per = size / CHUNK_COLUMNS;
@@ -611,14 +667,14 @@ function paint() {
 		for (const [u, v] of sharp) {
 			if (!tile(z, u, v)) continue;
 			const o = overlay(z, u, v);
-			if (!o) {
-				const c = chunkData.get(tileKey(z, u, v));
-				if (c && c.state === "loading") claimsPending++;
-				continue;
-			}
+			const c = chunkData.get(tileKey(z, u, v));
+			// On its way, or waiting to be asked for again.
+			if (c && c.state !== "ready") claimsPending++;
+			if (!o) continue;
 			const x0 = sx(u * units), x1 = sx((u + 1) * units), y0 = sy(v * units), y1 = sy((v + 1) * units);
 			ctx.drawImage(o, x0, y0, x1 - x0, y1 - y0);
 		}
+		trimClaims(z, sharp);
 	}
 	fillState = { wanted: sharp.length, loaded, any, claimsPending };
 	// A marker stands on its block: the map point of X, Y, Z, as the map file's sin and cos place it.

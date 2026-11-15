@@ -416,8 +416,8 @@ final class WebMapClaimsTest {
 			int shown = value == 0 ? Integer.MIN_VALUE : TileChunks.base(key, row) + value - 128;
 			// Where a flat outline at sea level would put the pixel: the row's crossing of height 64.
 			int flat = TileChunks.base(key, row);
-			dev.diorama.Diorama.LOGGER.info("web-map-claims: {} at {} {} {}, picture {}_{} column {} row {}: value {}, chunk z {} (its own {}; at height 64 it would be {})",
-				what, x, at[2], z, tu, tv, column, row, value, shown, at[1], flat);
+			dev.diorama.Diorama.LOGGER.info("web-map-claims: {} at {} {} {}, picture {}_{} column {} row {}: value {}, chunk z {} (its own {}; at height 64 it would be {}); chunks file {} bytes",
+				what, x, at[2], z, tu, tv, column, row, value, shown, at[1], flat, png.length);
 			if (shown != at[1]) {
 				wrong.add(what + ": the pixel showing " + x + " " + at[2] + " " + z + " says it shows chunk z " + shown + ", not " + at[1]);
 			}

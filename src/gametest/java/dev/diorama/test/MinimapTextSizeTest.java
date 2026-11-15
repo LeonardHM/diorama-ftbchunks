@@ -14,9 +14,10 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 
 /**
- * The minimap's text size (opt-in: {@code minimap-text-size}): the compass letters and the lines
- * under the minimap at every size each GUI scale offers. The N is measured in the screenshot, so a
- * size that isn't drawn at whole screen pixels, or isn't drawn at all, fails.
+ * The minimap's text sizes (opt-in: {@code minimap-text-size}): the compass letters and the lines
+ * under the minimap at every size each GUI scale offers. Both are measured in the screenshot, so a
+ * size that isn't drawn at whole screen pixels, or isn't drawn at all, fails. Then each of the
+ * two settings on its own: Compass size the letters and Text size the lines, neither the other's.
  */
 final class MinimapTextSizeTest {
 	/** The N's own red, which nothing else on the minimap uses. */
@@ -41,8 +42,8 @@ final class MinimapTextSizeTest {
 		Settings.GameTime gameTime = context.computeOnClient(mc -> Settings.get().gameTime);
 		context.runOnClient(mc -> {
 			Settings settings = Settings.get();
-			if (settings.minimapTextSize != 100) {
-				throw new AssertionError("The text size should start at 100%, not " + settings.minimapTextSize);
+			if (settings.minimapTextSize != 100 || settings.minimapCompassSize != 100) {
+				throw new AssertionError("The text and compass sizes should start at 100%, not " + settings.minimapTextSize + " and " + settings.minimapCompassSize);
 			}
 			settings.compass = true;
 			settings.coordinates = true;
@@ -68,6 +69,7 @@ final class MinimapTextSizeTest {
 				int pixels = Math.round(size * gui / 100.0F);
 				context.runOnClient(mc -> {
 					Settings.get().minimapTextSize = size;
+					Settings.get().minimapCompassSize = size;
 					Settings.get().minimapShape = Settings.Shape.SQUARE;
 				});
 				context.waitTicks(4);
@@ -95,6 +97,26 @@ final class MinimapTextSizeTest {
 				}
 			}
 		}
+		// Each on its own, at GUI scale 4: big letters over small lines, then small letters over big lines.
+		for (int[] pair : new int[][] {{200, 50}, {50, 200}}) {
+			context.runOnClient(mc -> {
+				Settings.get().minimapCompassSize = pair[0];
+				Settings.get().minimapTextSize = pair[1];
+			});
+			context.waitTicks(4);
+			BufferedImage shot = read(context.takeScreenshot("text-size-compass-" + pair[0] + "-text-" + pair[1]));
+			int[] box = context.computeOnClient(mc -> MinimapHud.shown());
+			int[] north = extent(shot, NORTH, box[0] * 4, box[1] * 4, (box[0] + box[2]) * 4, (box[1] + box[2]) * 4);
+			int[] time = extent(shot, BED_TIME, 0, (box[1] + box[2]) * 4, shot.getWidth(), shot.getHeight());
+			// Seven font pixels high each, at four screen pixels to a GUI pixel.
+			if (north[3] - north[1] + 1 != 7 * pair[0] * 4 / 100 || time[3] - time[1] + 1 != 7 * pair[1] * 4 / 100) {
+				throw new AssertionError("With Compass size " + pair[0] + "% and Text size " + pair[1] + "% the N is " + (north[3] - north[1] + 1) + " screen pixels high and the time " + (time[3] - time[1] + 1));
+			}
+		}
+		context.runOnClient(mc -> {
+			Settings.get().minimapCompassSize = 200;
+			Settings.get().minimapTextSize = 200;
+		});
 		// The biggest text on a round minimap in the bottom left, where the lines grow up from the edge.
 		context.runOnClient(mc -> {
 			Settings.get().minimapShape = Settings.Shape.ROUND;
@@ -110,6 +132,7 @@ final class MinimapTextSizeTest {
 			Settings.get().minimapShape = Settings.Shape.SQUARE;
 			Settings.get().minimapCorner = Settings.Corner.TOP_RIGHT;
 			Settings.get().minimapTextSize = 100;
+			Settings.get().minimapCompassSize = 100;
 		});
 
 		// The slider, in the Zoom and Opacity row: a real click at its right end picks the biggest.
@@ -120,6 +143,11 @@ final class MinimapTextSizeTest {
 		DioramaClientTest.clickAlong(context, "Text size: 100%", 0.98);
 		if (context.computeOnClient(mc -> Settings.get().minimapTextSize) != 200) {
 			throw new AssertionError("Clicking the end of Text size picked " + context.computeOnClient(mc -> Settings.get().minimapTextSize) + "%");
+		}
+		// And Compass size beside it, which leaves Text size alone.
+		DioramaClientTest.clickAlong(context, "Compass: 100%", 0.98);
+		if (context.computeOnClient(mc -> Settings.get().minimapCompassSize) != 200 || context.computeOnClient(mc -> Settings.get().minimapTextSize) != 200) {
+			throw new AssertionError("Clicking the end of Compass picked " + context.computeOnClient(mc -> Settings.get().minimapCompassSize) + "%, with Text size at " + context.computeOnClient(mc -> Settings.get().minimapTextSize) + "%");
 		}
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(3);
@@ -146,6 +174,7 @@ final class MinimapTextSizeTest {
 		context.runOnClient(mc -> {
 			Settings settings = Settings.get();
 			settings.minimapTextSize = 100;
+			settings.minimapCompassSize = 100;
 			settings.minimapSize = 96;
 			settings.gameTime = gameTime;
 			// The click saved its choice, and the next run starts from what's saved.

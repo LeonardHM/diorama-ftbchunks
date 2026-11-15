@@ -202,6 +202,13 @@ public final class TileBaker {
 	private int hitX;
 	private int hitY;
 	private int hitZ;
+	/**
+	 * The z of the ground the last trace landed on: the water's top where there's water over it, as
+	 * a player would stand; {@link Integer#MIN_VALUE} where it landed nowhere.
+	 */
+	private int groundZ = Integer.MIN_VALUE;
+	/** Each pixel's {@link #groundZ}, for {@link #reference(TileKey, ChunkSource, Looks, int[])}; null when not asked for. */
+	private int @Nullable [] groundOut;
 	/** Where across the block the ray landed, 0..1: east-west, and north-south on a top face. */
 	private double hitFx;
 	private double hitFz;
@@ -697,6 +704,23 @@ public final class TileBaker {
 		return pixels;
 	}
 
+	/**
+	 * A sky view tile as {@link #reference(TileKey, ChunkSource, Looks, boolean, Overlays, byte[])}
+	 * traces it, without fog of war or overlays, and in {@code ground} the z (turned space) of the
+	 * ground each pixel shows, {@link Integer#MIN_VALUE} where it shows none: which chunk the pixel
+	 * is of, for a map that keeps no blocks to work it out later, as the web map's land claims.
+	 */
+	public static int[] reference(TileKey key, ChunkSource source, Looks looks, int[] ground) {
+		TileBaker baker = new TileBaker(key, source, looks, false, null);
+		baker.fourSamples = true;
+		java.util.Arrays.fill(ground, Integer.MIN_VALUE);
+		baker.groundOut = ground;
+		int size = Projection.TILE_PIXELS;
+		int[] pixels = new int[size * size];
+		baker.bakePixels(0, 0, size, size, pixels, null, null, null);
+		return pixels;
+	}
+
 	/** A tile drawn on the GPU, merged with what was saved the same way a traced bake is. */
 	public static TileImage gpuImage(
 		TileKey key, int[] pixels, int @Nullable [] saved, byte @Nullable [] info, byte @Nullable [] pixelLight, byte @Nullable [] savedLight
@@ -783,6 +807,13 @@ public final class TileBaker {
 							ur += (this.outR - Lighting.CAVE_FOG[0] * fog) / Math.max(1e-3F, lit[0]);
 							ug += (this.outG - Lighting.CAVE_FOG[1] * fog) / Math.max(1e-3F, lit[1]);
 							ub += (this.outB - Lighting.CAVE_FOG[2] * fog) / Math.max(1e-3F, lit[2]);
+						}
+						if (s == 0 && this.groundOut != null) {
+							int ix = x - border;
+							int iy = y - border;
+							if (ix >= 0 && iy >= 0 && ix < width && iy < height) {
+								this.groundOut[(py0 + iy) * Projection.TILE_PIXELS + px0 + ix] = this.groundZ;
+							}
 						}
 						if (s == 0 && info != null && this.hitSolid) {
 							int ix = x - border;
@@ -919,6 +950,7 @@ public final class TileBaker {
 
 		boolean skippingRock = this.lit;
 		this.hitSolid = false;
+		this.groundZ = Integer.MIN_VALUE;
 		this.outBlockLight = 0;
 		// Colour picked up from plants and glass on the way down, applied to the surface below.
 		float overR = 0;
@@ -1012,6 +1044,7 @@ public final class TileBaker {
 					}
 					double hitY = y0 - t * sin;
 					double hitZ = z0 - t * cos;
+					this.groundZ = waterId >= 0 ? waterBz : bz;
 					this.hitSolid = kind == BlockLooks.SOLID;
 					this.hitId = id;
 					this.hitTop = enteredTop;
@@ -1091,6 +1124,7 @@ public final class TileBaker {
 			this.outG = cut[1];
 			this.outB = cut[2];
 		} else if (waterId >= 0) {
+			this.groundZ = waterBz;
 			this.outR = 0;
 			this.outG = 0;
 			this.outB = 0;

@@ -100,7 +100,7 @@ final class WebServer {
 				return;
 			}
 			Path file = root.resolve(path.substring(1)).normalize();
-			// Only what's in the folder, and only the page, its map file and the pictures.
+			// Only what's in the folder, and only the page, its map and claims files and the pictures.
 			String name = file.getFileName() == null ? "" : file.getFileName().toString();
 			if (name.equalsIgnoreCase(WebMarkers.STORE) || name.equalsIgnoreCase(WebMarkers.FILE) && !markers.getAsBoolean()) {
 				// The markers of dimensions the map leaves out are in the first, and may be in the second until it's written again.
@@ -112,7 +112,7 @@ final class WebServer {
 				send(exchange, 404, "text/plain", null);
 				return;
 			}
-			String type = name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html; charset=utf-8" : null;
+			String type = name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".png") ? "image/png" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html; charset=utf-8" : null;
 			if (!file.startsWith(root) || type == null
 				|| file.getNameCount() > root.getNameCount() + 1 && closed.test(file.getName(root.getNameCount()).toString().toLowerCase(java.util.Locale.ROOT))
 				|| !Files.isRegularFile(file) || !file.toRealPath().startsWith(root.toRealPath())) {
@@ -126,7 +126,7 @@ final class WebServer {
 			// A picture asked for with its version (the page's way) never changes under that address: the
 			// browser keeps it. Anything else may change, and is checked each time (a 304 if not).
 			String query = exchange.getRequestURI().getRawQuery();
-			exchange.getResponseHeaders().set("Cache-Control", type.equals("image/jpeg") && query != null && query.startsWith("v=")
+			exchange.getResponseHeaders().set("Cache-Control", type.startsWith("image/") && query != null && query.startsWith("v=")
 				? "public, max-age=31536000, immutable" : "no-cache");
 			String since = exchange.getRequestHeaders().getFirst("If-Modified-Since");
 			if (since != null) {

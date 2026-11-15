@@ -19,11 +19,12 @@ import org.jspecify.annotations.Nullable;
  * @param folder where the tiles go; null for {@code diorama-web} in the world folder
  * @param everyChunk whether every finished chunk is drawn, rather than only land players spent time near
  * @param players whether the page shows where online players are
+ * @param claims whether the page shows FTB Chunks' and Open Parties and Claims' land claims
  */
-public record WebSettings(boolean enabled, int port, String address, @Nullable Path folder, boolean everyChunk, boolean players) {
+public record WebSettings(boolean enabled, int port, String address, @Nullable Path folder, boolean everyChunk, boolean players, boolean claims) {
 	public static final String FILE = "diorama-server.properties";
 	public static final int DEFAULT_PORT = 8100;
-	public static final WebSettings DEFAULTS = new WebSettings(false, DEFAULT_PORT, "", null, false, true);
+	public static final WebSettings DEFAULTS = new WebSettings(false, DEFAULT_PORT, "", null, false, true, true);
 
 	/** Reads the settings from {@code configFolder}, adding the web map's to the file if it lacks them. */
 	public static WebSettings load(Path configFolder) {
@@ -72,7 +73,8 @@ public record WebSettings(boolean enabled, int port, String address, @Nullable P
 		Path folder = folderText.isEmpty() ? null : Path.of(folderText);
 		boolean everyChunk = properties.getProperty("share-land", "visited").trim().toLowerCase(Locale.ROOT).equals("generated");
 		boolean players = !properties.getProperty("web-map-players", "true").trim().equalsIgnoreCase("false");
-		return new WebSettings(enabled, port, address, folder, everyChunk, players);
+		boolean claims = !properties.getProperty("web-map-claims", "true").trim().equalsIgnoreCase("false");
+		return new WebSettings(enabled, port, address, folder, everyChunk, players, claims);
 	}
 
 	/** Each of the web map's settings: its key, what it means, its default. */
@@ -98,6 +100,13 @@ public record WebSettings(boolean enabled, int port, String address, @Nullable P
 			# false: the web map shows no players. Players come from the web map's own web server
 			# (web-map-port), never from a file; behind a web server of your own, pass /players.json
 			# on to that port.
+			""", "true"},
+		{"web-map-claims", """
+			# true: the web map shows land claimed with FTB Chunks or Open Parties and Claims, in each
+			# owner's colour and with their name, as the map in the game does. Only claims every player
+			# is shown in the game: not an FTB team's whose claim visibility isn't public, nor other
+			# players' while Open Parties and Claims' claimsSynchronization isn't ALL.
+			# false: no claims on the web map.
 			""", "true"},
 	};
 }

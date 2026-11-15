@@ -76,7 +76,9 @@ public final class WebMap {
 	/** The most zoom levels out from the map's own tiles. */
 	private static final int MAX_ZOOM = 10;
 	/** A picture's file name: its place across and down. */
-	private static final java.util.regex.Pattern TILE_NAME = java.util.regex.Pattern.compile("-?[0-9]+_-?[0-9]+[.]jpg");
+	private static final java.util.regex.Pattern TILE_NAME = java.util.regex.Pattern.compile("-?[0-9]+_-?[0-9]+[.](jpg|png)");
+	/** Set in the progress file once every picture has its {@link WebChunks}, for land claims. */
+	private static final String CLAIM_CHUNKS = "claim-chunks";
 
 	private static @Nullable WebMap running;
 
@@ -97,6 +99,8 @@ public final class WebMap {
 	final WebMarkers markers;
 	/** The players on the page, or null when the settings keep them off it. */
 	private final @Nullable WebPlayers players;
+	/** The land claims on the page, or null when the settings keep them off it or no claims mod is installed. */
+	private final @Nullable WebClaims claims;
 	private volatile boolean stopping;
 	/** An operator asked to draw everything again; taken by the next pass. */
 	private final java.util.concurrent.atomic.AtomicBoolean redrawAll = new java.util.concurrent.atomic.AtomicBoolean();
@@ -116,6 +120,7 @@ public final class WebMap {
 		// come from the map's own web server, so there are none to show without it.
 		this.players = settings.players() && settings.port() > 0 && ShareServer.locks(server).radarAllowed() ? new WebPlayers(server, this::leftOut) : null;
 		this.markers = new WebMarkers(server.getWorldPath(LevelResource.ROOT).resolve(WebMarkers.STORE), this.folder);
+		this.claims = settings.claims() ? WebClaims.of(server, this::leftOut, this.folder) : null;
 		this.thread = new Thread(this::run, "Diorama web map");
 		this.thread.setDaemon(true);
 		this.thread.setPriority(Thread.MIN_PRIORITY);
@@ -172,6 +177,11 @@ public final class WebMap {
 		if (this.players != null) {
 			this.players.start();
 		}
+		// Claims from before (another setting, a mod since taken out) never stay: the page has what's read now.
+		WebClaims.delete(this.folder);
+		if (this.claims != null) {
+			this.claims.start();
+		}
 		this.thread.start();
 		Diorama.LOGGER.info("Diorama's web map is drawing into {}", this.folder);
 		return true;
@@ -189,6 +199,9 @@ public final class WebMap {
 		}
 		if (this.players != null) {
 			this.players.stop();
+		}
+		if (this.claims != null) {
+			this.claims.stop();
 		}
 		WebServer http = this.http;
 		if (http != null) {
@@ -264,7 +277,7 @@ public final class WebMap {
 			if (!Files.isDirectory(level, LinkOption.NOFOLLOW_LINKS)) {
 				continue;
 			}
-			try (DirectoryStream<Path> files = Files.newDirectoryStream(level, "*.jpg")) {
+			try (DirectoryStream<Path> files = Files.newDirectoryStream(level, "*.{jpg,png}")) {
 				for (Path file : files) {
 					if (TILE_NAME.matcher(file.getFileName().toString()).matches()) {
 						try {
@@ -363,6 +376,15 @@ public final class WebMap {
 			} else {
 				progress.setProperty("share-land", land);
 			}
+			// Land claims sit on the ground each picture shows, which pictures drawn without them
+			// don't say: everything again, once. Without claims the pictures don't keep it, so
+			// claims turned on later draw everything again too.
+			if (this.claims != null && !"true".equals(progress.getProperty(CLAIM_CHUNKS))) {
+				Diorama.LOGGER.info("Web map: drawing the whole map again, so land claims sit on the ground they cover");
+				this.redrawAll.set(true);
+			} else if (this.claims == null && progress.remove(CLAIM_CHUNKS) != null) {
+				this.saveProgress(progress);
+			}
 			while (!this.stopping) {
 				boolean all = this.redrawAll.getAndSet(false) || this.redrawOwed;
 				this.redrawOwed = false;
@@ -391,6 +413,9 @@ public final class WebMap {
 				if (all && complete && !this.stopping) {
 					// Only now is the map drawn under this share-land: a redraw cut short starts over.
 					progress.setProperty("share-land", land);
+					if (this.claims != null) {
+						progress.setProperty(CLAIM_CHUNKS, "true");
+					}
 					this.saveProgress(progress);
 				} else if (all && !this.stopping) {
 					// Out of disk, say: again, but not at once.
@@ -532,6 +557,7 @@ public final class WebMap {
 			.append(",\"background\":\"#").append(String.format(Locale.ROOT, "%06x", WebTiles.BACKGROUND)).append('"')
 			.append(",\"updated\":").append(System.currentTimeMillis())
 			.append(",\"players\":").append(this.players != null)
+			.append(this.claims != null ? ",\"claims\":true" : "")
 			.append(",\"dimensions\":[");
 		List<Dimension> list = new ArrayList<>(this.dimensions.values());
 		list.sort(Comparator.comparing(d -> d.order() + d.id));
@@ -798,8 +824,11 @@ public final class WebMap {
 				int u = (int) (key >> 32);
 				int v = (int) key;
 				int[] pixels;
+				TileKey tile = new TileKey(TileKey.SURFACE, u, v);
+				// Which chunk each pixel shows, for land claims; only while the map shows them.
+				int[] ground = this.map.claims != null ? new int[WebTiles.SIZE * WebTiles.SIZE] : null;
 				try {
-					pixels = TileBaker.reference(new TileKey(TileKey.SURFACE, u, v), this.source, looks, false, null, null);
+					pixels = ground != null ? TileBaker.reference(tile, this.source, looks, ground) : TileBaker.reference(tile, this.source, looks, false, null, null);
 				} catch (RuntimeException | LinkageError | StackOverflowError e) {
 					// A block a mod draws in a way the server can't: this tile stays as it was, and the rest
 					// are drawn. It's tried again when its land is saved again or on a redraw.
@@ -808,6 +837,12 @@ public final class WebMap {
 				}
 				try {
 					long size = WebTiles.write(WebTiles.file(this.folder, 0, u, v), pixels);
+					Path chunks = WebChunks.file(this.folder, 0, u, v);
+					if (ground != null && size > 0) {
+						WebChunks.write(chunks, WebChunks.fromGround(tile, ground));
+					} else {
+						Files.deleteIfExists(chunks);
+					}
 					bytes += size;
 					if (size > 0) {
 						drawn++;
@@ -911,6 +946,20 @@ public final class WebMap {
 					}
 					try {
 						long size = WebTiles.shrink(WebTiles.file(this.folder, zoom, u, v), children);
+						Path chunks = WebChunks.file(this.folder, zoom, u, v);
+						byte[] shrunk = null;
+						if (this.map.claims != null && size > 0) {
+							byte[][] under = new byte[4][];
+							for (int i = 0; i < 4; i++) {
+								under[i] = WebChunks.read(WebChunks.file(this.folder, zoom - 1, u * 2 + (i & 1), v * 2 + (i >> 1)));
+							}
+							shrunk = WebChunks.shrink(new TileKey(TileKey.SURFACE, u, v, zoom), under);
+						}
+						if (shrunk != null) {
+							WebChunks.write(chunks, shrunk);
+						} else {
+							Files.deleteIfExists(chunks);
+						}
 						bytes += size;
 						if (size > 0) {
 							this.tiles[zoom].add(key);
@@ -932,6 +981,7 @@ public final class WebMap {
 					long key = it.next();
 					try {
 						Files.deleteIfExists(WebTiles.file(this.folder, zoom, (int) (key >> 32), (int) key));
+						Files.deleteIfExists(WebChunks.file(this.folder, zoom, (int) (key >> 32), (int) key));
 						it.remove();
 					} catch (IOException e) {
 						failed = true;

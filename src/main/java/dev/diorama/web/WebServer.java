@@ -33,11 +33,13 @@ final class WebServer {
 	 * Starts serving {@code folder}, or returns null (logged) if the port can't be had. Nothing is
 	 * served from a folder in it whose name, in lower case, {@code closed} says yes to. Where players
 	 * are comes from {@code players}, never from a file; with none, nothing answers at that address.
+	 * The markers' file is served only while {@code markers} says it holds what it should, and the
+	 * server's own copy of the markers never, wherever the folder is.
 	 */
-	static @Nullable WebServer start(Path folder, String address, int port, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players) {
+	static @Nullable WebServer start(Path folder, String address, int port, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players, java.util.function.BooleanSupplier markers) {
 		try {
 			Path root = folder.toAbsolutePath().normalize();
-			return start(address, port, exchange -> serve(root, closed, players, exchange));
+			return start(address, port, exchange -> serve(root, closed, players, markers, exchange));
 		} catch (IOException | RuntimeException e) {
 			Diorama.LOGGER.warn("Diorama's web map can't serve on port {} ({}); set web-map-port to a free one, or 0 to serve the folder yourself", port, e.toString());
 			return null;
@@ -76,7 +78,7 @@ final class WebServer {
 		this.workers.shutdownNow();
 	}
 
-	private static void serve(Path root, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players, HttpExchange exchange) throws IOException {
+	private static void serve(Path root, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players, java.util.function.BooleanSupplier markers, HttpExchange exchange) throws IOException {
 		try {
 			String method = exchange.getRequestMethod();
 			if (!method.equals("GET") && !method.equals("HEAD")) {
@@ -100,6 +102,11 @@ final class WebServer {
 			Path file = root.resolve(path.substring(1)).normalize();
 			// Only what's in the folder, and only the page, its map file and the pictures.
 			String name = file.getFileName() == null ? "" : file.getFileName().toString();
+			if (name.equalsIgnoreCase(WebMarkers.STORE) || name.equalsIgnoreCase(WebMarkers.FILE) && !markers.getAsBoolean()) {
+				// The markers of dimensions the map leaves out are in the first, and may be in the second until it's written again.
+				send(exchange, 404, "text/plain", null);
+				return;
+			}
 			if (("/" + name).equalsIgnoreCase(WebPlayers.PATH)) {
 				// Where players are is never a file: one of that name, however it's asked for, isn't served.
 				send(exchange, 404, "text/plain", null);

@@ -49,9 +49,19 @@ Where players are is never written to the map's folder: Diorama's own web server
 
 These are read when the server starts. A dimension allowed again is drawn whole again. If you serve the folder with a web server of your own, the old pictures stay reachable until the Minecraft server has started and deleted them.
 
+## Markers
+
+An operator can mark named places on the page for everyone: spawn, a shop, a nether hub.
+
+- `/diorama-web marker add <name>` marks where you stand. With a name that's already there, it moves that marker. From the console, say where: `execute in minecraft:overworld positioned 0 64 0 run diorama-web marker add Spawn`.
+- `/diorama-web marker remove <name>` takes one off.
+- `/diorama-web marker list` lists them.
+
+These aren't players' waypoints, which stay on each player's own computer; the page shows only what an operator put there. Up to 500 markers, names up to 48 characters. They're kept in `diorama-web-markers.json` in the world folder, and the page reads `markers.json` in the map's folder, which the server writes from it. A marker in a dimension the map leaves out isn't in that file. The server writes it when it starts and when a marker changes: if you serve the folder with a web server of your own, a marker in a dimension you've just turned off stays reachable until the Minecraft server has started, as the old pictures do.
+
 ## Serving it yourself
 
-The folder is a plain static site: `index.html`, `map.json` and the pictures, one JPEG per tile in `<dimension>/<zoom>/<x>_<y>.jpg`. Point nginx, Caddy or any web server at it and set `web-map-port=0`. For example with nginx:
+The folder is a plain static site: `index.html`, `map.json`, `markers.json` and the pictures, one JPEG per tile in `<dimension>/<zoom>/<x>_<y>.jpg`. Point nginx, Caddy or any web server at it and set `web-map-port=0`. For example with nginx:
 
 ```nginx
 location /map/ {
@@ -73,6 +83,7 @@ For operators:
 
 - `/diorama-web status` says what it's doing.
 - `/diorama-web redraw` draws everything again.
+- `/diorama-web marker add|remove|list`: see Markers above.
 
 Changing `share-land` redraws the whole map by itself the next time the server starts.
 

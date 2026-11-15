@@ -149,6 +149,9 @@ public class DioramaClientTest implements FabricClientGameTest {
 			if (tests.contains("waypoint-text-size")) {
 				WaypointTextSizeTest.run(context, world);
 			}
+			if (tests.contains("arrow-size")) {
+				ArrowSizeTest.run(context, world);
+			}
 			if (tests.contains("minimap-text-size")) {
 				MinimapTextSizeTest.run(context, world);
 			}

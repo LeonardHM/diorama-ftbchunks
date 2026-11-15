@@ -137,6 +137,13 @@ public final class Settings {
 	public boolean radarPokemonAdded = false;
 	/** Index into {@link #ARROW_COLORS}. */
 	public int arrowColor = 0;
+	/**
+	 * How big your own arrow is on the minimap and the map, in percent of the size it has always
+	 * had: {@link #MIN_ARROW_SIZE} to {@link #MAX_ARROW_SIZE} in steps of {@link #ARROW_SIZE_STEP}.
+	 * Xaero's Arrow Scale goes from two thirds to four thirds of its own default; this one stops
+	 * where the arrow, which is made of whole blocks, has too few left to read as an arrow.
+	 */
+	public int arrowSize = 100;
 
 	public boolean waypointsOnMap = true;
 	public boolean waypointsInWorld = true;
@@ -356,6 +363,21 @@ public final class Settings {
 	public static final int[] ARROW_COLORS = {0x3FA9F5, 0xEF4B4B, 0x62D96B, 0xFFC53D, 0xF76B15, 0x8E4EC6, 0xD6409F, 0xF2F2F2};
 	public static final String[] ARROW_COLOR_NAMES = {"blue", "red", "green", "yellow", "orange", "purple", "pink", "white"};
 
+	public static final int MIN_ARROW_SIZE = 70;
+	public static final int MAX_ARROW_SIZE = 200;
+	public static final int ARROW_SIZE_STEP = 10;
+
+	/** A hand-edited arrow size, moved to the nearest one the slider has. */
+	public static int snapArrowSize(int size) {
+		int clamped = Math.max(MIN_ARROW_SIZE, Math.min(MAX_ARROW_SIZE, size));
+		return MIN_ARROW_SIZE + Math.round((clamped - MIN_ARROW_SIZE) / (float) ARROW_SIZE_STEP) * ARROW_SIZE_STEP;
+	}
+
+	/** What the player arrow's usual size is multiplied by. */
+	public float arrowScale() {
+		return snapArrowSize(this.arrowSize) / 100.0F;
+	}
+
 	/** The player arrow's colour as RGB. */
 	public int arrowRgb() {
 		return ARROW_COLORS[Math.floorMod(this.arrowColor, ARROW_COLORS.length)];
@@ -529,6 +551,7 @@ public final class Settings {
 		}
 		settings.mapOffDimensions = off;
 		settings.arrowColor = Math.floorMod(settings.arrowColor, ARROW_COLORS.length);
+		settings.arrowSize = snapArrowSize(settings.arrowSize);
 		// Hand-edited numbers: snap to a value the settings screen can show.
 		if (settings.minimapZoom != null) {
 			settings.zoomStep(STEPS_BEFORE_OLD_ZOOMS + Math.max(0, Math.min(OLD_ZOOMS - 1, settings.minimapZoom)));

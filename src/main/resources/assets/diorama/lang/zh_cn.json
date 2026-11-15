@@ -290,6 +290,8 @@
 	"diorama.radar_mobs.search": "搜索生物",
 	"diorama.settings.arrow_color": "箭头颜色",
 	"diorama.settings.arrow_color.tooltip": "你在小地图和地图上自身箭头的颜色。",
+	"diorama.settings.arrow_size": "箭头大小",
+	"diorama.settings.arrow_size.tooltip": "你在小地图和地图上自身箭头的大小。",
 	"diorama.settings.arrow_color.blue": "蓝色",
 	"diorama.settings.arrow_color.red": "红色",
 	"diorama.settings.arrow_color.green": "绿色",

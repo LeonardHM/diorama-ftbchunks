@@ -79,8 +79,8 @@ public abstract class GameRendererMixin {
 	*///?}
 	private void diorama$captureWorldProjection(CallbackInfo ci, @Local(argsOnly = true) net.minecraft.client.DeltaTracker deltaTracker) {
 		CameraRenderState cameraState = this.gameRenderState.levelRenderState.cameraRenderState;
-		// Not before a world's camera has been extracted. In a frame that doesn't draw the world,
-		// the camera is still the one it was last drawn with.
+		// Not before a world's camera has been extracted. A frame that doesn't draw the world
+		// doesn't lay out the HUD either, so what's worked out from its left-over camera goes unused.
 		if (!cameraState.initialized) {
 			return;
 		}

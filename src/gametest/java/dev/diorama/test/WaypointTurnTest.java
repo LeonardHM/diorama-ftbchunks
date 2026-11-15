@@ -19,7 +19,9 @@ import net.minecraft.world.level.levelgen.Heightmap;
  * A waypoint in the world stays on its spot while the camera turns (opt-in: {@code waypoint-turn},
  * #399). The camera turns a step and the very next frame is read: its beam and pin have to stand
  * over the pillar they mark, as they do in a frame drawn with the camera still. A waypoint laid out
- * with the camera of the frame before stands a whole step to the side of it.
+ * with the camera of the frame before stands a whole step to the side of it. On 26.1 Fabric the
+ * screenshot after a turn still shows the frame before it, so the test can't fail there; 26.1.2
+ * NeoForge runs the same code and shows it.
  */
 final class WaypointTurnTest {
 	/** Degrees the camera turns before each frame. */
@@ -53,11 +55,14 @@ final class WaypointTurnTest {
 
 		Settings.Beams beams = context.computeOnClient(mc -> Settings.get().waypointBeams);
 		Settings.WaypointLabels labels = context.computeOnClient(mc -> Settings.get().waypointLabels);
+		int size = context.computeOnClient(mc -> Settings.get().waypointWorldSize);
 		Waypoint waypoint = new Waypoint("Turn", x, floor + 4, z - 20, "minecraft:overworld", 0xFF46A758);
 		context.runOnClient(mc -> {
 			Settings.get().waypointBeams = Settings.Beams.ALL;
 			// The text under a pin would cover the pillar.
 			Settings.get().waypointLabels = Settings.WaypointLabels.NONE;
+			// The pin is told from the beam by its width.
+			Settings.get().waypointWorldSize = Settings.DEFAULT_WAYPOINT_SIZE;
 			WaypointStore store = WaypointStore.get();
 			store.all().stream().toList().forEach(store::remove);
 			store.add(waypoint);
@@ -89,6 +94,7 @@ final class WaypointTurnTest {
 		context.runOnClient(mc -> {
 			Settings.get().waypointBeams = beams;
 			Settings.get().waypointLabels = labels;
+			Settings.get().waypointWorldSize = size;
 			Settings.get().save();
 			WaypointStore.get().remove(waypoint);
 		});
@@ -147,10 +153,10 @@ final class WaypointTurnTest {
 		double beamX = middle(image, left, right, 10, top - PIN_ROWS, name + ": the beam");
 		double pinX = middle(image, left, right, top - PIN_ROWS, top, name + ": the pin");
 		// The pin's rows are the wide ones: the beam is half as wide. Only close to the pillar, where
-		// the crosshair isn't.
+		// the crosshair isn't, and above its foot, where the floor's edge can be as bright.
 		long rows = 0;
 		int wide = 0;
-		for (int y = 0; y <= bottom; y++) {
+		for (int y = 0; y < bottom - 20; y++) {
 			int across = 0;
 			for (int x = Math.max(0, (int) pillarX - 40); x <= Math.min(image.getWidth() - 1, (int) pillarX + 40); x++) {
 				if (drawn(image.getRGB(x, y))) {

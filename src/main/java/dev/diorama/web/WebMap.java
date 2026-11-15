@@ -224,7 +224,8 @@ public final class WebMap {
 
 	/** What the map is doing, for the status command. */
 	public String status() {
-		return this.status;
+		WebClaims claims = this.claims;
+		return claims == null ? this.status : this.status + "; " + claims.summary();
 	}
 
 	/** Whether the page has no map of the dimension with this ID: one the settings keep off it, or one this world doesn't have. */

@@ -602,7 +602,8 @@ function paint() {
 			ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
 		}
 	}
-	fillState = { wanted: sharp.length, loaded, any };
+	// Claims not yet painted where they will be: the list not yet in, or a picture's chunks file on its way.
+	let claimsPending = map.claims && claims === null ? 1 : 0;
 	// Claims over the sharp pictures drawn, the same size and filtered the same way.
 	if (dimClaims()) {
 		const units = tileUnits(z);
@@ -610,11 +611,16 @@ function paint() {
 		for (const [u, v] of sharp) {
 			if (!tile(z, u, v)) continue;
 			const o = overlay(z, u, v);
-			if (!o) continue;
+			if (!o) {
+				const c = chunkData.get(tileKey(z, u, v));
+				if (c && c.state === "loading") claimsPending++;
+				continue;
+			}
 			const x0 = sx(u * units), x1 = sx((u + 1) * units), y0 = sy(v * units), y1 = sy((v + 1) * units);
 			ctx.drawImage(o, x0, y0, x1 - x0, y1 - y0);
 		}
 	}
+	fillState = { wanted: sharp.length, loaded, any, claimsPending };
 	// A marker stands on its block: the map point of X, Y, Z, as the map file's sin and cos place it.
 	for (const m of markers) if (m.dimension === dim.id) drawMarker(sx(m.x + 0.5), sy((m.z + 0.5) * map.sin - m.y * map.cos), dpr, m.name);
 	for (const p of players) if (p.dimension === dim.id) drawPlayer(sx(p.u), sy(p.v), dpr, p, p.name);

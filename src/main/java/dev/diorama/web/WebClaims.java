@@ -67,6 +67,8 @@ final class WebClaims {
 	private volatile boolean stopping;
 	/** What the file holds now; null before it's written. */
 	private @Nullable String written;
+	/** How many claimed chunks the page has and what reading them costs, for the status command. */
+	private volatile String summary = "land claims not read yet";
 
 	private WebClaims(MinecraftServer server, Predicate<ServerLevel> leftOut, Path folder, List<Source> sources) {
 		this.server = server;
@@ -120,6 +122,11 @@ final class WebClaims {
 		this.thread.interrupt();
 	}
 
+	/** How many claimed chunks the page shows, and how long the last read held the server thread. */
+	String summary() {
+		return this.summary;
+	}
+
 	private void run() {
 		CompletableFuture<Read> asked = null;
 		long wait = 0;
@@ -143,6 +150,12 @@ final class WebClaims {
 				wait = Math.max(MIN_GAP_MS, read.nanos() * BUDGET / 1_000_000);
 				if (read.complete() && !this.stopping) {
 					this.write(read);
+					int chunks = 0;
+					for (Map<Long, Owner> dimension : read.dimensions().values()) {
+						chunks += dimension.size();
+					}
+					this.summary = String.format(Locale.ROOT, "%d claimed chunks on the page, read in %.1f ms on the server thread every %.0f s",
+						chunks, read.nanos() / 1e6, wait / 1000.0);
 				}
 			} catch (InterruptedException e) {
 				return;

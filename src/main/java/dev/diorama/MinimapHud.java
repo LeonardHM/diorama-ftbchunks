@@ -271,7 +271,7 @@ public final class MinimapHud implements HudElement {
 		Radar.draw(graphics, view, blips, false, true);
 		Markers.player(graphics, x + size / 2.0F, y + size / 2.0F, Markers.onMap(viewer.getViewYRot(partialTick)), 5 * settings.arrowScale());
 		if (settings.compass) {
-			this.compass(graphics, font, x, y, size, text);
+			this.compass(graphics, font, x, y, size, TextSize.scale(settings.minimapCompassSize));
 		}
 		float textY = y + size + 4;
 		float left = x - 2;
@@ -389,7 +389,7 @@ public final class MinimapHud implements HudElement {
 		return Math.max(MARGIN, Math.min(x, width - MARGIN - size));
 	}
 
-	/** Letters on the frame, by which way the map faces. At another text size each grows in from its edge. */
+	/** Letters on the frame, by which way the map faces. At another size each grows in from its edge. */
 	private void compass(GuiGraphicsExtractor graphics, Font font, int x, int y, int size, float text) {
 		String[] letters = {"N", "E", "S", "W"};
 		int turns = Projection.facing().turns;

@@ -99,15 +99,15 @@ public final class SettingsScreen extends Screen {
 		minimap.slider("enlarged", (s.minimapEnlarged - Settings.MIN_ENLARGED) / Settings.ENLARGED_STEP, enlargedSizes,
 			i -> s.minimapEnlarged = Settings.MIN_ENLARGED + i * Settings.ENLARGED_STEP,
 			i -> Component.literal(java.math.BigDecimal.valueOf(Settings.MIN_ENLARGED + i * Settings.ENLARGED_STEP, 2).stripTrailingZeros().toPlainString() + "×"));
-		// Beside Size, so the tab doesn't grow.
-		minimap.lastTwoSideBySide();
 		minimap.slider("zoom", s.zoomStep(), Settings.ZOOMS.length, s::zoomStep, i -> Component.literal(Settings.ZOOMS[i] + "×"));
+		// Three to a row, so the tab doesn't grow: it has no room for another row on a small screen.
+		minimap.lastThreeSideBySide();
 		int opacities = (Settings.MAX_OPACITY - Settings.MIN_OPACITY) / Settings.OPACITY_STEP + 1;
 		minimap.slider("opacity", (Settings.snapOpacity(s.minimapOpacity) - Settings.MIN_OPACITY) / Settings.OPACITY_STEP, opacities,
 			i -> s.minimapOpacity = Settings.MIN_OPACITY + i * Settings.OPACITY_STEP, i -> Component.literal((Settings.MIN_OPACITY + i * Settings.OPACITY_STEP) + "%"));
 		int[] textSizes = TextSize.sizes();
 		minimap.slider("text_size", nearestIndex(textSizes, s.minimapTextSize), textSizes.length, i -> s.minimapTextSize = textSizes[i], i -> Component.literal(textSizes[i] + "%"));
-		// Three to a row, so the tab doesn't grow: it has no room for another row on a small screen.
+		minimap.slider("compass_size", nearestIndex(textSizes, s.minimapCompassSize), textSizes.length, i -> s.minimapCompassSize = textSizes[i], i -> Component.literal(textSizes[i] + "%"));
 		minimap.lastThreeSideBySide();
 		// Side by side, so the tab stays short enough for a small screen.
 		minimap.choice("shape", Settings.Shape.values(), () -> s.minimapShape, v -> s.minimapShape = v);

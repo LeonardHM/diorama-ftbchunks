@@ -88,11 +88,17 @@ public final class Settings {
 	public boolean biome = true;
 	public GameTime gameTime = GameTime.OFF;
 	/**
-	 * How big the compass letters and the lines under the minimap are, in percent of the game's own
-	 * text: {@link #MIN_TEXT_SIZE} to {@link #MAX_TEXT_SIZE}. {@code TextSize.scale} rounds it to
+	 * How big the lines under the minimap are, in percent of the game's own text:
+	 * {@link #MIN_TEXT_SIZE} to {@link #MAX_TEXT_SIZE}. {@code TextSize.scale} rounds it to
 	 * whole screen pixels.
 	 */
 	public int minimapTextSize = 100;
+	/**
+	 * How big the compass letters on the minimap are, the same way. Its own setting, as Xaero's
+	 * Compass Scale is: bigger coordinates needn't mean bigger letters over the map. 0 in a file
+	 * from before it existed, when Text size sized both: it starts as that.
+	 */
+	public int minimapCompassSize = 0;
 	/** Whether the sky view is drawn by day, at night, or as the world's time has it; see {@code NightLook}. */
 	public DayNight dayNight = DayNight.FOLLOW;
 	public boolean autoCaves = true;
@@ -564,6 +570,13 @@ public final class Settings {
 		settings.radarRange = nearest(RANGES, settings.radarRange);
 		settings.waypointDistance = nearest(WAYPOINT_DISTANCES, settings.waypointDistance);
 		settings.minimapTextSize = clampTextSize(settings.minimapTextSize);
+		// From before the compass had its own size: it keeps the size it's drawn at. Written now (below),
+		// so a Text size changed in the file later doesn't move the compass with it.
+		if (settings.minimapCompassSize <= 0) {
+			settings.minimapCompassSize = settings.minimapTextSize;
+			moved = true;
+		}
+		settings.minimapCompassSize = clampTextSize(settings.minimapCompassSize);
 		settings.waypointMinimapSize = clampWaypointSize(settings.waypointMinimapSize);
 		settings.waypointMapSize = clampWaypointSize(settings.waypointMapSize);
 		settings.waypointWorldSize = clampWaypointSize(settings.waypointWorldSize);

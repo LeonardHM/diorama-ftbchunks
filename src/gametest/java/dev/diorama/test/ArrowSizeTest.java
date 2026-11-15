@@ -31,6 +31,7 @@ final class ArrowSizeTest {
 		int guiScale = context.computeOnClient(mc -> mc.options.guiScale().get());
 		int colour = context.computeOnClient(mc -> Settings.get().arrowColor);
 		int sizeBefore = context.computeOnClient(mc -> Settings.get().minimapSize);
+		Settings.Shape shapeBefore = context.computeOnClient(mc -> Settings.get().minimapShape);
 		context.runOnClient(mc -> {
 			Settings settings = Settings.get();
 			if (settings.arrowSize != 100) {
@@ -115,6 +116,7 @@ final class ArrowSizeTest {
 			settings.arrowSize = 100;
 			settings.arrowColor = colour;
 			settings.minimapSize = sizeBefore;
+			settings.minimapShape = shapeBefore;
 			// The click saved its choice, and the next run starts from what's saved.
 			settings.save();
 		});

@@ -135,19 +135,19 @@ final class MinimapTextSizeTest {
 			Settings.get().minimapCompassSize = 100;
 		});
 
-		// The slider, in the Zoom and Opacity row: a real click at its right end picks the biggest.
+		// The slider, in the Opacity and Compass row: a real click at its right end picks the biggest.
 		DioramaClientTest.setGuiScale(context, 3);
 		context.setScreen(() -> new SettingsScreen(null));
 		context.waitTicks(5);
 		context.takeScreenshot("text-size-settings");
 		DioramaClientTest.clickAlong(context, "Text size: 100%", 0.98);
-		if (context.computeOnClient(mc -> Settings.get().minimapTextSize) != 200) {
-			throw new AssertionError("Clicking the end of Text size picked " + context.computeOnClient(mc -> Settings.get().minimapTextSize) + "%");
+		if (context.computeOnClient(mc -> Settings.get().minimapTextSize) != 200 || context.computeOnClient(mc -> Settings.get().minimapCompassSize) != 100) {
+			throw new AssertionError("Clicking the end of Text size picked " + context.computeOnClient(mc -> Settings.get().minimapTextSize) + "%, with Compass at " + context.computeOnClient(mc -> Settings.get().minimapCompassSize) + "%");
 		}
-		// And Compass size beside it, which leaves Text size alone.
-		DioramaClientTest.clickAlong(context, "Compass: 100%", 0.98);
-		if (context.computeOnClient(mc -> Settings.get().minimapCompassSize) != 200 || context.computeOnClient(mc -> Settings.get().minimapTextSize) != 200) {
-			throw new AssertionError("Clicking the end of Compass picked " + context.computeOnClient(mc -> Settings.get().minimapCompassSize) + "%, with Text size at " + context.computeOnClient(mc -> Settings.get().minimapTextSize) + "%");
+		// And Compass beside it, to its smallest by its left end, which leaves Text size at its biggest.
+		DioramaClientTest.clickAlong(context, "Compass: 100%", 0.02);
+		if (context.computeOnClient(mc -> Settings.get().minimapCompassSize) != 33 || context.computeOnClient(mc -> Settings.get().minimapTextSize) != 200) {
+			throw new AssertionError("Clicking the start of Compass picked " + context.computeOnClient(mc -> Settings.get().minimapCompassSize) + "%, with Text size at " + context.computeOnClient(mc -> Settings.get().minimapTextSize) + "%");
 		}
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(3);

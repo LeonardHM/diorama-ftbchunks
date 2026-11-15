@@ -570,7 +570,13 @@ public final class Settings {
 		settings.radarRange = nearest(RANGES, settings.radarRange);
 		settings.waypointDistance = nearest(WAYPOINT_DISTANCES, settings.waypointDistance);
 		settings.minimapTextSize = clampTextSize(settings.minimapTextSize);
-		settings.minimapCompassSize = clampTextSize(settings.minimapCompassSize <= 0 ? settings.minimapTextSize : settings.minimapCompassSize);
+		// From before the compass had its own size: it keeps the size it's drawn at. Written now (below),
+		// so a Text size changed in the file later doesn't move the compass with it.
+		if (settings.minimapCompassSize <= 0) {
+			settings.minimapCompassSize = settings.minimapTextSize;
+			moved = true;
+		}
+		settings.minimapCompassSize = clampTextSize(settings.minimapCompassSize);
 		settings.waypointMinimapSize = clampWaypointSize(settings.waypointMinimapSize);
 		settings.waypointMapSize = clampWaypointSize(settings.waypointMapSize);
 		settings.waypointWorldSize = clampWaypointSize(settings.waypointWorldSize);

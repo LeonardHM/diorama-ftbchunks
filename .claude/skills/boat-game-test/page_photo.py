@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Photographs a web map page in Chrome once the page says its pictures are in.
 
-usage: page_photo.py <address> <out.png> [seconds]
+usage: page_photo.py <address> <out.png> [seconds] [--phone] [--hover X,Y] [--tap X,Y]
 
 The game tests call it (ClientWebMapTest.photograph). Chrome's own --screenshot with
 --virtual-time-budget takes the picture when its made-up clock runs out, and that clock doesn't
@@ -9,6 +9,9 @@ wait for a picture being decoded: on a busy VM the map came out blank now and th
 Chrome on the real clock, asks the page through the DevTools protocol whether every tile in view
 has loaded (window.__fill) or it shows its "no map" line, and photographs it then; after
 [seconds] (30) it photographs whatever is there and exits 4. Exits 3 if the machine has no Chrome.
+
+--phone shows the page as a phone does (390 by 844, touch). --hover moves the mouse to X,Y and
+--tap taps there, in the page's pixels, once the pictures are in and before the photograph.
 """
 import base64
 import json
@@ -27,7 +30,7 @@ DONE = """(() => {
   const fill = window.__fill ? window.__fill() : null;
   const empty = document.getElementById("empty");
   const none = !!empty && getComputedStyle(empty).display !== "none";
-  return loaded && (none || (!!fill && fill.wanted > 0 && fill.loaded >= fill.wanted));
+  return loaded && (none || (!!fill && fill.wanted > 0 && fill.loaded >= fill.wanted && !fill.claimsPending));
 })()"""
 
 
@@ -86,8 +89,25 @@ class DevTools:
 
 
 def main():
-    address, out = sys.argv[1], sys.argv[2]
-    seconds = float(sys.argv[3]) if len(sys.argv) > 3 else 30
+    args = sys.argv[1:]
+    phone = '--phone' in args
+    hover = tap = None
+    rest = []
+    i = 0
+    while i < len(args):
+        if args[i] in ('--hover', '--tap'):
+            point = tuple(float(n) for n in args[i + 1].split(','))
+            if args[i] == '--hover':
+                hover = point
+            else:
+                tap = point
+            i += 2
+            continue
+        if args[i] != '--phone':
+            rest.append(args[i])
+        i += 1
+    address, out = rest[0], rest[1]
+    seconds = float(rest[2]) if len(rest) > 2 else 30
     chrome = next((path for path in map(shutil.which, ('chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', '/snap/bin/chromium')) if path), None)
     if chrome is None:
         return 3
@@ -114,6 +134,9 @@ def main():
             print('Chrome never opened the page', file=sys.stderr)
             return 1
         tools = DevTools(page['webSocketDebuggerUrl'])
+        if phone:
+            tools.call('Emulation.setDeviceMetricsOverride', width=390, height=844, deviceScaleFactor=2, mobile=True)
+            tools.call('Emulation.setTouchEmulationEnabled', enabled=True, maxTouchPoints=5)
         done = False
         while not done and time.time() < deadline:
             done = tools.call('Runtime.evaluate', expression=DONE, returnByValue=True).get('result', {}).get('value') is True
@@ -121,6 +144,13 @@ def main():
                 time.sleep(0.25)
         # The page paints on the next frame after its last picture loads.
         time.sleep(0.5)
+        if hover:
+            tools.call('Input.dispatchMouseEvent', type='mouseMoved', x=hover[0], y=hover[1])
+            time.sleep(0.5)
+        if tap:
+            tools.call('Input.dispatchTouchEvent', type='touchStart', touchPoints=[{'x': tap[0], 'y': tap[1]}])
+            tools.call('Input.dispatchTouchEvent', type='touchEnd', touchPoints=[])
+            time.sleep(0.5)
         with open(out, 'wb') as file:
             file.write(base64.b64decode(tools.call('Page.captureScreenshot')['data']))
         print('photographed once the page had its pictures' if done else f'photographed after {seconds:.0f} s, the page still loading')

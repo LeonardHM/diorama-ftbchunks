@@ -286,11 +286,18 @@ final class ClientWebMapTest {
 	 * is still being decoded and leave the map blank.
 	 */
 	static boolean photograph(String address, Path file) {
+		return photograph(address, file, new String[0]);
+	}
+
+	/** As {@link #photograph(String, Path)}, with page_photo.py's options: {@code --phone}, {@code --hover X,Y}, {@code --tap X,Y}. */
+	static boolean photograph(String address, Path file, String... options) {
 		Path log = file.resolveSibling(file.getFileName() + ".log");
 		Path helper = Path.of(System.getProperty("user.home"), "diorama", ".claude", "skills", "boat-game-test", "page_photo.py");
 		if (Files.isRegularFile(helper)) {
 			try {
-				Process process = new ProcessBuilder("python3", helper.toString(), address, file.toAbsolutePath().toString())
+				java.util.List<String> command = new java.util.ArrayList<>(java.util.List.of("python3", helper.toString(), address, file.toAbsolutePath().toString()));
+				command.addAll(java.util.List.of(options));
+				Process process = new ProcessBuilder(command)
 					.redirectErrorStream(true).redirectOutput(log.toFile()).start();
 				if (!process.waitFor(180, TimeUnit.SECONDS)) {
 					process.destroyForcibly();

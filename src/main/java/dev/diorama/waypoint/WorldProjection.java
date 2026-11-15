@@ -7,8 +7,8 @@ import org.joml.Vector4f;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The camera of the last rendered frame, as the world was actually drawn. Projecting through it
- * puts a waypoint's label exactly over its spot, whatever the bobbing, tilt or field of view.
+ * The camera the world is drawn with in the frame whose GUI is being laid out. Projecting through
+ * it puts a waypoint's label exactly over its spot, whatever the bobbing, tilt or field of view.
  */
 public final class WorldProjection {
 	private static final Matrix4f WORLD = new Matrix4f();

@@ -30,12 +30,12 @@
 	.dims button + button { border-left: 1px solid var(--line); }
 	.follow { padding: 8px 12px; color: var(--muted); }
 	.follow.on { color: var(--text); background: rgba(255, 255, 255, 0.08); }
-	.people { position: relative; }
 	.people > button { padding: 8px 12px; color: var(--muted); }
-	.people ul { position: absolute; top: 100%; left: -1px; margin: 6px 0 0; padding: 4px 0; list-style: none; min-width: 100%; max-height: 60vh; overflow-y: auto; }
-	.people li button { display: block; width: 100%; padding: 6px 12px; text-align: left; white-space: nowrap; }
-	.people li button:hover { background: rgba(255, 255, 255, 0.08); }
-	.people li small { color: var(--muted); margin-left: 8px; }
+	/* Under the whole bar, from its left edge: on a phone a list under its own button would run off the screen. */
+	#peopleList { position: absolute; top: 100%; left: 0; margin: 6px 0 0; padding: 4px 0; list-style: none; max-width: 100%; max-height: 60vh; overflow: auto; }
+	#peopleList li button { display: block; width: 100%; padding: 6px 12px; text-align: left; white-space: nowrap; }
+	#peopleList li button:hover { background: rgba(255, 255, 255, 0.08); }
+	#peopleList li small { color: var(--muted); margin-left: 8px; }
 	.where { position: fixed; left: 12px; bottom: 12px; padding: 8px 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 	.empty { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); padding: 24px; text-align: center; }
 	button:focus-visible { outline: 2px solid #7aa7ff; outline-offset: -2px; }
@@ -43,7 +43,7 @@
 </head>
 <body>
 <canvas id="map" aria-label="Map"></canvas>
-<div class="bar"><div class="dims panel" id="dims"></div><button class="follow panel on" id="follow" hidden aria-pressed="true" title="Keep the map centred on you. Turns off when you move the map.">Follow</button><div class="people panel" id="people" hidden><button id="peopleButton" aria-expanded="false"></button><ul class="panel" id="peopleList" hidden></ul></div></div>
+<div class="bar"><div class="dims panel" id="dims"></div><button class="follow panel on" id="follow" hidden aria-pressed="true" title="Keep the map centred on you. Turns off when you move the map.">Follow</button><div class="people panel" id="people" hidden><button id="peopleButton" aria-expanded="false"></button></div><ul class="panel" id="peopleList" hidden></ul></div>
 <div class="zoom panel"><button id="in" aria-label="Zoom in">+</button><button id="out" aria-label="Zoom out">&minus;</button></div>
 <div class="where panel" id="where" hidden></div>
 <div class="empty" id="empty"></div>
@@ -130,6 +130,11 @@ function showPlayers(list) {
 	button.textContent = players.length === 1 ? "1 player" : players.length + " players";
 	if (!players.length) { ul.hidden = true; button.setAttribute("aria-expanded", "false"); }
 	if (!changed) return;
+	listPlayers();
+	draw();
+}
+function listPlayers() {
+	const ul = document.getElementById("peopleList");
 	ul.innerHTML = "";
 	for (const p of players) {
 		const li = document.createElement("li"), b = document.createElement("button"), place = document.createElement("small");
@@ -148,7 +153,6 @@ function showPlayers(list) {
 		li.appendChild(b);
 		ul.appendChild(li);
 	}
-	draw();
 }
 document.getElementById("peopleButton").onclick = () => {
 	const ul = document.getElementById("peopleList");
@@ -171,6 +175,8 @@ function pick(d, first) {
 	empty.textContent = !map.live ? "The map is still being drawn. It fills in as the server draws it."
 		: dim ? "Nothing is mapped here yet. The map fills in as you explore." : "No map to show right now. It appears here while you're in a world with a map.";
 	if (first || switched) home(first);
+	// Each name says which dimension its player is in when it isn't this one.
+	if (switched) listPlayers();
 	draw();
 }
 

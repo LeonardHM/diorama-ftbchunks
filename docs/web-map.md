@@ -59,7 +59,7 @@ location /map/ {
 }
 ```
 
-To have players on a page you serve yourself, keep Diorama's web server on for them alone (`web-map-port=8100`, `web-map-address=127.0.0.1`) and pass the one address on:
+To have players on a page you serve yourself, keep Diorama's web server on, reachable from the same machine only (`web-map-port=8100`, `web-map-address=127.0.0.1`), and pass the one address on:
 
 ```nginx
 location = /map/players.json {

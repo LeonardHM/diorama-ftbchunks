@@ -100,6 +100,11 @@ final class WebServer {
 			Path file = root.resolve(path.substring(1)).normalize();
 			// Only what's in the folder, and only the page, its map file and the pictures.
 			String name = file.getFileName() == null ? "" : file.getFileName().toString();
+			if (("/" + name).equalsIgnoreCase(WebPlayers.PATH)) {
+				// Where players are is never a file: one of that name, however it's asked for, isn't served.
+				send(exchange, 404, "text/plain", null);
+				return;
+			}
 			String type = name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html; charset=utf-8" : null;
 			if (!file.startsWith(root) || type == null
 				|| file.getNameCount() > root.getNameCount() + 1 && closed.test(file.getName(root.getNameCount()).toString().toLowerCase(java.util.Locale.ROOT))

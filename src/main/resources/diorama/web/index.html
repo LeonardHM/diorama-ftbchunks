@@ -118,7 +118,8 @@ function startPlayers() {
 	asking = true;
 	const ask = () => {
 		if (!map.players) { asking = false; showPlayers([]); return; }
-		if (document.hidden) { setTimeout(ask, 1000); return; }
+		// Not asked for while nobody looks, and nobody is shown from before when someone looks again.
+		if (document.hidden) { showPlayers([]); setTimeout(ask, 1000); return; }
 		// An answer that doesn't come counts as none: nobody stays on the map from an old one.
 		const gaveUp = new AbortController(), timer = setTimeout(() => gaveUp.abort(), 5000);
 		fetch("players.json", { cache: "no-store", signal: gaveUp.signal }).then(r => r.ok ? r.json() : { players: [] })

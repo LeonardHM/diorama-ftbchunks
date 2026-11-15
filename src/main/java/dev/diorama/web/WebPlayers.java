@@ -43,6 +43,7 @@ final class WebPlayers {
 	private final Thread thread;
 	private volatile boolean stopping;
 	private volatile String json = NONE;
+	/** When the server last answered, on the clock that only runs forward; 0 before it has. */
 	private volatile long answered;
 
 	WebPlayers(MinecraftServer server, Predicate<ServerLevel> leftOut) {
@@ -64,7 +65,8 @@ final class WebPlayers {
 
 	/** What the page gets now: who it shows, or no one while the server isn't answering. */
 	String json() {
-		return this.stopping || System.currentTimeMillis() - this.answered > STALE_MS ? NONE : this.json;
+		long answered = this.answered;
+		return this.stopping || answered == 0 || System.nanoTime() - answered > STALE_MS * 1_000_000 ? NONE : this.json;
 	}
 
 	private void run() {
@@ -90,7 +92,8 @@ final class WebPlayers {
 				asked = null;
 				if (!this.stopping) {
 					this.json = now;
-					this.answered = System.currentTimeMillis();
+					// Never 0, which means no answer yet.
+					this.answered = Math.max(1, System.nanoTime());
 				}
 			} catch (InterruptedException e) {
 				return;

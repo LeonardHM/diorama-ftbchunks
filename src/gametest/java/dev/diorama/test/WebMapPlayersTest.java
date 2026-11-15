@@ -111,10 +111,21 @@ final class WebMapPlayersTest {
 			// Gone from the server, gone from the page.
 			server.vanillaPlayerLeaves(OTHER);
 			waitForNo(context, http, port, OTHER, "offline", wrong);
+			expect(wrong, get(http, port, "/players.json").contains(me), "with " + OTHER + " gone, " + me + " is off the page too: " + get(http, port, "/players.json"));
+			// A file of that name in the folder, left by anything, isn't served by any spelling of its address.
+			write(folder.resolve("players.json"), "{\"players\":[{\"name\":\"Ghost\"}]}");
+			for (String path : new String[] {"/players.json", "/players.json/", "/Players.json", "/./players.json", "/players.json?x=1"}) {
+				expect(wrong, !get(http, port, path).contains("Ghost"), path + " serves a players file from the folder: " + get(http, port, path));
+			}
+			try {
+				Files.deleteIfExists(folder.resolve("players.json"));
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
 			RealServer.leave(context);
 		}
 
-		// Turned off by the owner: no file, and the one from before deleted.
+		// Turned off by the owner: nothing answers where players were.
 		write(config, base + "web-map-players=false\n");
 		try (RealServer server = RealServer.start(true)) {
 			server.join(context);

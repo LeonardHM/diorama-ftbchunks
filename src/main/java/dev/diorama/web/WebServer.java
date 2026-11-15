@@ -33,13 +33,16 @@ final class WebServer {
 	 * Starts serving {@code folder}, or returns null (logged) if the port can't be had. Nothing is
 	 * served from a folder in it whose name, in lower case, {@code closed} says yes to. Where players
 	 * are comes from {@code players}, never from a file; with none, nothing answers at that address.
-	 * The markers' file is served only while {@code markers} says it holds what it should, and the
-	 * server's own copy of the markers never, wherever the folder is.
+	 * Land claims likewise come from {@code claims}, which is given the version the page already has
+	 * and answers null when that's still current. The markers' file is served only while
+	 * {@code markers} says it holds what it should, and the server's own copy of the markers never,
+	 * wherever the folder is.
 	 */
-	static @Nullable WebServer start(Path folder, String address, int port, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players, java.util.function.BooleanSupplier markers) {
+	static @Nullable WebServer start(Path folder, String address, int port, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players,
+		java.util.function.@Nullable UnaryOperator<@Nullable String> claims, java.util.function.BooleanSupplier markers) {
 		try {
 			Path root = folder.toAbsolutePath().normalize();
-			return start(address, port, exchange -> serve(root, closed, players, markers, exchange));
+			return start(address, port, exchange -> serve(root, closed, players, claims, markers, exchange));
 		} catch (IOException | RuntimeException e) {
 			Diorama.LOGGER.warn("Diorama's web map can't serve on port {} ({}); set web-map-port to a free one, or 0 to serve the folder yourself", port, e.toString());
 			return null;
@@ -78,7 +81,8 @@ final class WebServer {
 		this.workers.shutdownNow();
 	}
 
-	private static void serve(Path root, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players, java.util.function.BooleanSupplier markers, HttpExchange exchange) throws IOException {
+	private static void serve(Path root, java.util.function.Predicate<String> closed, java.util.function.@Nullable Supplier<String> players,
+		java.util.function.@Nullable UnaryOperator<@Nullable String> claims, java.util.function.BooleanSupplier markers, HttpExchange exchange) throws IOException {
 		try {
 			String method = exchange.getRequestMethod();
 			if (!method.equals("GET") && !method.equals("HEAD")) {
@@ -99,20 +103,37 @@ final class WebServer {
 				}
 				return;
 			}
+			if (path.equals(WebClaims.PATH)) {
+				// Before any file, as players: claims are never a file, and one of that name is never read.
+				if (claims == null) {
+					send(exchange, 404, "text/plain", null);
+				} else {
+					exchange.getResponseHeaders().set("Cache-Control", "no-store");
+					// The page says which answer it has (?since=<version>): nothing to send when that's still it.
+					String query = exchange.getRequestURI().getRawQuery();
+					String text = claims.apply(query != null && query.startsWith("since=") ? query.substring(6) : null);
+					if (text == null) {
+						exchange.sendResponseHeaders(204, -1);
+					} else {
+						send(exchange, 200, "application/json", method.equals("HEAD") ? null : text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+					}
+				}
+				return;
+			}
 			Path file = root.resolve(path.substring(1)).normalize();
-			// Only what's in the folder, and only the page, its map file and the pictures.
+			// Only what's in the folder, and only the page, its map file, the pictures and their chunks files.
 			String name = file.getFileName() == null ? "" : file.getFileName().toString();
 			if (name.equalsIgnoreCase(WebMarkers.STORE) || name.equalsIgnoreCase(WebMarkers.FILE) && !markers.getAsBoolean()) {
 				// The markers of dimensions the map leaves out are in the first, and may be in the second until it's written again.
 				send(exchange, 404, "text/plain", null);
 				return;
 			}
-			if (("/" + name).equalsIgnoreCase(WebPlayers.PATH)) {
-				// Where players are is never a file: one of that name, however it's asked for, isn't served.
+			if (("/" + name).equalsIgnoreCase(WebPlayers.PATH) || ("/" + name).equalsIgnoreCase(WebClaims.PATH)) {
+				// Where players are and land claims are never files: one of those names, however it's asked for, isn't served.
 				send(exchange, 404, "text/plain", null);
 				return;
 			}
-			String type = name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html; charset=utf-8" : null;
+			String type = name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".png") ? "image/png" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html; charset=utf-8" : null;
 			if (!file.startsWith(root) || type == null
 				|| file.getNameCount() > root.getNameCount() + 1 && closed.test(file.getName(root.getNameCount()).toString().toLowerCase(java.util.Locale.ROOT))
 				|| !Files.isRegularFile(file) || !file.toRealPath().startsWith(root.toRealPath())) {
@@ -126,7 +147,7 @@ final class WebServer {
 			// A picture asked for with its version (the page's way) never changes under that address: the
 			// browser keeps it. Anything else may change, and is checked each time (a 304 if not).
 			String query = exchange.getRequestURI().getRawQuery();
-			exchange.getResponseHeaders().set("Cache-Control", type.equals("image/jpeg") && query != null && query.startsWith("v=")
+			exchange.getResponseHeaders().set("Cache-Control", type.startsWith("image/") && query != null && query.startsWith("v=")
 				? "public, max-age=31536000, immutable" : "no-cache");
 			String since = exchange.getRequestHeaders().getFirst("If-Modified-Since");
 			if (since != null) {

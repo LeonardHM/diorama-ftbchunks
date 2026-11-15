@@ -465,6 +465,9 @@ public class DioramaClientTest implements FabricClientGameTest {
 		if (tests.contains("web-map-players")) {
 			WebMapPlayersTest.run(context);
 		}
+		if (tests.contains("web-map-claims")) {
+			WebMapClaimsTest.run(context);
+		}
 		if (tests.contains("web-map-locks")) {
 			WebMapLocksTest.run(context);
 		}
@@ -5449,7 +5452,7 @@ public class DioramaClientTest implements FabricClientGameTest {
 	}
 
 	/** Calls one of the claim requests Open Parties and Claims' client API has had since 1.20.1, on the client. */
-	private static void opacRequest(ClientGameTestContext context, String request, Object... args) {
+	static void opacRequest(ClientGameTestContext context, String request, Object... args) {
 		context.runOnClient(mc -> {
 			try {
 				Object api = Class.forName("xaero.pac.client.api.OpenPACClientAPI").getMethod("get").invoke(null);

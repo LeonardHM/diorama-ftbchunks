@@ -109,6 +109,8 @@ if [ -e ~/mods.tgz ]; then
 		*) with_mods=(-I .claude/skills/boat-game-test/mods.init.gradle.kts) ;;
 	esac
 	export DIORAMA_TEST_MODS=$mods
+	# The real server gets the same jars (real_server.sh): a claims mod has to be on both sides.
+	[ -n "${DIORAMA_REAL_SERVER:-}" ] && export REAL_SERVER_MODS=$mods
 fi
 rm -rf "$dev/screenshots" "$dev/crash-reports" "$dev/logs" "$run/screenshots" "$run/crash-reports" "$run/logs" ~/result ~/result.tgz ~/thread-dumps
 # The game starts from the folder the snapshot left (its settings, options and map folders), on a

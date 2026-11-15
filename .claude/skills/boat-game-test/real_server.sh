@@ -16,6 +16,8 @@
 # REAL_SERVER_KIND=paper: a Paper server of the node's Minecraft version instead of the loader's, for
 # what a server plugin does to a Diorama client. Only "without": Paper loads no mods.
 # REAL_SERVER_PLUGINS: download addresses of plugin jars for its plugins folder, with spaces between.
+# REAL_SERVER_MODS: a folder of other mods' release jars for its mods folder, beside Diorama (or
+# alone, "without"); sandbox.sh passes the run's --mods jars here.
 set -u
 action=$1
 node=$2
@@ -123,6 +125,14 @@ start() {
 	rm -f "$root"/mods/*.jar
 	if [ "$loader" = fabric ]; then
 		cp "$root/libs/fabric-api.jar" "$root/mods/"
+	fi
+	if [ -n "${REAL_SERVER_MODS:-}" ] && [ "$loader" != paper ]; then
+		# Fabric API is the server's own already.
+		for jar in "$REAL_SERVER_MODS"/*.jar; do
+			[ -e "$jar" ] || continue
+			case $(basename "$jar") in fabric-api-*) continue ;; esac
+			cp "$jar" "$root/mods/" || exit 1
+		done
 	fi
 	if [ "$loader" = paper ]; then
 		[ "$with" = without ] || { echo "a Paper server loads no mods: start it without" >&2; exit 1; }

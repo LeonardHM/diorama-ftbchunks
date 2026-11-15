@@ -40,7 +40,13 @@ python .claude/skills/boat-game-test/boat_run.py 26.3,1.21.1,1.21.1-neoforge --t
 - **A list by name**: `opac` is `mods/opac.txt` beside this file, one `<node> <url>` line per jar. The VM downloads them and keeps them for its next runs. Use this for anything a later task will run again, and commit the list: add the mod's own dependencies as lines too (Fabric API is already there), and take the URLs from Modrinth's or CurseForge's file page for the node's Minecraft version and loader.
 - **A folder, a jar or a URL**, for a one-off: a folder's `<node>/` subfolder is used when it has one, else the jars in it, for every node of the run. Jars on this PC are uploaded each run. Keep them outside the repo, or untracked: other mods' jars are never committed.
 
-A node the list has no line for stops the script before any VM starts. `--mods` installs the mods in the test client only, so it refuses a run with `DIORAMA_REAL_SERVER`.
+A node the list has no line for stops the script before any VM starts.
+
+With `--env DIORAMA_REAL_SERVER=1`, the real server gets the same jars in its `mods` folder (`real_server.sh` copies them from `REAL_SERVER_MODS`, which `sandbox.sh` sets), so a mod that has to be on both sides, such as a claims mod, runs on both. Only mods that load on a dedicated server belong in such a run: a client-only one in the list would stop the server from starting.
+
+```
+python .claude/skills/boat-game-test/boat_run.py 1.21.1 --tests web-map-claims --mods ftb --env DIORAMA_REAL_SERVER=1 --type large
+```
 
 | Node | How the jars load |
 |---|---|

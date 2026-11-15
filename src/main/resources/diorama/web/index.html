@@ -37,6 +37,9 @@
 	#peopleList li button:hover { background: rgba(255, 255, 255, 0.08); }
 	#peopleList li small { color: var(--muted); margin-left: 8px; }
 	.where { position: fixed; left: 12px; bottom: 12px; padding: 8px 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+	/* Who owns the land under the pointer, beside it. */
+	.claim { position: fixed; padding: 6px 10px; pointer-events: none; white-space: nowrap; max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis; }
+	.claim i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; vertical-align: -1px; }
 	.empty { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); padding: 24px; text-align: center; }
 	button:focus-visible { outline: 2px solid #7aa7ff; outline-offset: -2px; }
 </style>
@@ -46,6 +49,7 @@
 <div class="bar"><div class="dims panel" id="dims"></div><button class="follow panel on" id="follow" hidden aria-pressed="true" title="Keep the map centred on you. Turns off when you move the map.">Follow</button><div class="people panel" id="people" hidden><button id="peopleButton" aria-expanded="false"></button></div><ul class="panel" id="peopleList" hidden></ul></div>
 <div class="zoom panel"><button id="in" aria-label="Zoom in">+</button><button id="out" aria-label="Zoom out">&minus;</button></div>
 <div class="where panel" id="where" hidden></div>
+<div class="claim panel" id="claim" hidden></div>
 <div class="empty" id="empty"></div>
 <script>
 "use strict";
@@ -65,6 +69,10 @@ let follow = true;
 let markers = [];
 // The server's map, when it shows them (map.players): everyone online it doesn't leave out, from players.json.
 let players = [];
+// Land claims, when the server's map shows them (map.claims): per dimension, its owners and which
+// chunk (in the pictures' turned space) each owns, from claims.json. Null before the first answer.
+let claims = null;
+let claimsVersion = 0;
 
 function tileUnits(z) { return map.tileUnits * (1 << z); }
 
@@ -78,6 +86,8 @@ function load(first) {
 		if (map.live && !wasLive) startPlayer();
 		if (!map.live) loadMarkers();
 		if (!map.live && map.players && !asking) startPlayers();
+		if (map.claims && !askingClaims) startClaims();
+		if (!map.claims && claims) { claims = null; claimsTag = ""; claimsVersion++; overlays.clear(); hideClaim(); draw(); }
 		// Turned off since: gone now, not at the next answer.
 		if (!map.players && players.length) showPlayers([]);
 	}).catch(() => {}).finally(() => { clearTimeout(loadTimer); loadTimer = setTimeout(() => load(false), map && map.live ? 3000 : 30000); });
@@ -190,6 +200,270 @@ document.getElementById("peopleButton").onclick = () => {
 	document.getElementById("peopleButton").setAttribute("aria-expanded", ul.hidden ? "false" : "true");
 };
 
+// Who owns which land, asked for every 10 seconds while the page shows: claims change seldom, and
+// the server answers "not changed" (204) when the page has its latest. They come only from the
+// server's memory: an answer that doesn't come, or isn't claims, counts as none.
+let askingClaims = false;
+let claimsTag = "";
+function startClaims() {
+	askingClaims = true;
+	const ask = () => {
+		if (!map.claims) { askingClaims = false; return; }
+		if (document.hidden) { setTimeout(ask, 2000); return; }
+		let again = 10000;
+		// An answer that doesn't come in 8 seconds counts as none, like one that isn't claims.
+		const gaveUp = new AbortController(), timer = setTimeout(() => gaveUp.abort(), 8000);
+		fetch("claims.json" + (claimsTag ? "?since=" + encodeURIComponent(claimsTag) : ""), { cache: "no-store", signal: gaveUp.signal }).then(r => {
+			if (r.status === 204 && claims) return true;
+			if (!r.ok || r.status === 204) throw new Error("claims: " + r.status);
+			return r.json();
+		}).then(json => {
+			if (json === true) return;
+			if (!json || typeof json !== "object" || !map.claims) throw new Error("claims: none");
+			showClaims(json);
+		}).catch(() => { again = 5000; showClaims(null); })
+			.finally(() => { clearTimeout(timer); setTimeout(ask, again); });
+	};
+	ask();
+}
+function showClaims(json) {
+	// None again: nothing to paint over.
+	if (!json && claims && !claims.size && !claimsTag) return;
+	claimsTag = json && typeof json.version === "string" ? json.version : "";
+	const dims = new Map();
+	for (const d of (json && Array.isArray(json.dimensions)) ? json.dimensions : []) {
+		// Owners told apart by their id, however they're named and coloured, so there's an edge
+		// between any two. The same id twice is one owner (its force loaded chunks, or forceloadable, apart).
+		const owners = [], index = new Map(), slot = [];
+		for (const o of Array.isArray(d.owners) ? d.owners : []) {
+			const id = (o.id ? String(o.id) : "#" + slot.length) + (o.forced ? "!" : "");
+			if (!index.has(id)) {
+				index.set(id, owners.length);
+				owners.push({ name: String(o.name || ""), color: /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : "#ffffff",
+					rgb: parseInt(String(o.color || "#ffffff").slice(1), 16) || 0, forced: !!o.forced, titled: !!o.titled });
+			}
+			slot.push(index.get(id));
+		}
+		const at = new Map();
+		const c = Array.isArray(d.chunks) ? d.chunks : [];
+		for (let i = 0; i + 2 < c.length; i += 3) if (slot[c[i + 2]] !== undefined) at.set(c[i] + "," + c[i + 1], slot[c[i + 2]] + 1);
+		dims.set(d.id, { owners, at });
+	}
+	claims = dims;
+	claimsVersion++;
+	overlays.clear();
+	hideClaim();
+	draw();
+}
+/** The claims of the dimension shown, or null when it has none. */
+function dimClaims() {
+	// None the moment the map file says the page shows none.
+	const c = claims && dim && map && map.claims ? claims.get(dim.id) : null;
+	return c && c.at.size ? c : null;
+}
+
+// Which chunk each part of a picture shows, written beside it by the server (<x>_<y>.png): a column
+// per block across at zoom 0 and a row per picture row, each 128 plus how many chunks south the
+// ground is of where the row crosses height 64, 0 where the picture shows nothing.
+const CHUNK_COLUMNS = 128;
+const chunkData = new Map();   // tile key -> { state, data, ver, tries, retry, prev }
+const overlays = new Map();    // tile key -> { canvas, ver, claims, north, south }
+/**
+ * A picture's chunks, as { data, ver }, or null while they're on their way or it has none. While a
+ * picture drawn again has its new file on the way, the one before is given, as the old picture shows.
+ */
+function chunkEntry(z, u, v) {
+	const key = tileKey(z, u, v);
+	const ver = present[z] && present[z].get(u + "," + v);
+	if (ver === undefined) return null;
+	let c = chunkData.get(key);
+	const shown = c => !c ? null : c.state === "ready" ? (c.data ? c : null) : c.prev;
+	// A file that wasn't there is asked for again after a minute: the server answers "not there" too when it can't read one for a moment.
+	const missing = c && c.state === "ready" && !c.data && c.again && c.again < performance.now();
+	if (c && c.ver === ver && !missing && (c.state !== "failed" || c.retry > performance.now())) return shown(c);
+	const prev = shown(c);
+	c = { state: "loading", data: null, ver, tries: c && c.ver === ver ? c.tries : 0, retry: 0, prev: prev ? { data: prev.data, ver: prev.ver } : null };
+	chunkData.set(key, c);
+	const mine = c;
+	fetch(key + ".png?v=" + ver).then(r => {
+		// None: a picture drawn before claims were shown, or with nothing on it. No claims on it until it's drawn again.
+		if (r.status === 404) return null;
+		if (!r.ok) throw new Error("chunks: " + r.status);
+		return r.blob().then(b => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }));
+	}).then(img => {
+		if (chunkData.get(key) !== mine) return;
+		let data = null;
+		if (img) {
+			const off = document.createElement("canvas");
+			off.width = img.width; off.height = img.height;
+			const g = off.getContext("2d", { willReadFrequently: true });
+			g.drawImage(img, 0, 0);
+			const rgba = g.getImageData(0, 0, img.width, img.height).data;
+			data = new Uint8Array(img.width * img.height);
+			for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4];
+			if (img.width !== CHUNK_COLUMNS || img.height !== map.tilePixels) data = null;
+			if (img.close) img.close();
+		}
+		mine.data = data; mine.state = "ready"; mine.prev = null;
+		mine.again = data ? 0 : performance.now() + 60000;
+		draw();
+	}).catch(() => {
+		// A server or proxy too busy for a moment: again shortly, later and later, as the pictures are.
+		if (chunkData.get(key) !== mine) return;
+		mine.state = "failed"; mine.tries++;
+		const wait = Math.min(30000, 500 * Math.pow(2, mine.tries));
+		mine.retry = performance.now() + wait;
+		setTimeout(draw, wait + 10);
+	});
+	return shown(c);
+}
+function chunksOf(z, u, v) { const e = chunkEntry(z, u, v); return e ? e.data : null; }
+/** The chunk x of a picture's column, and the chunk where its row crosses height 64. */
+function chunkX(z, u, column) { const units = tileUnits(z); return Math.floor(Math.floor(u * units + (column + 0.5) * units / CHUNK_COLUMNS) / 16); }
+function chunkBase(z, v, row) { const units = tileUnits(z); const mv = v * units + (row + 0.5) * units / map.tilePixels; return Math.floor(Math.floor((mv + 64 * map.cos) / map.sin) / 16); }
+
+// The claims painted on a picture, as the map in the game paints them: every pixel showing claimed
+// ground in its owner's colour, see-through, and stronger along the edges where the owner changes.
+// FTB Chunks' force loaded land and Open Parties and Claims' forceloadable land are tinted a little
+// more. Light enough that the ground reads through it.
+const FILL_ALPHA = 0x33, FORCED_ALPHA = 0x52, EDGE_ALPHA = 0xCC;
+function overlay(z, u, v) {
+	const c = dimClaims();
+	if (!c) return null;
+	const own = chunkEntry(z, u, v);
+	if (!own) return null;
+	const key = tileKey(z, u, v);
+	// The pictures above and below, as far as they're in: their edge rows say where an owner changes
+	// across the border, so either one drawn again paints this one again.
+	const north = present[z].has(u + "," + (v - 1)) ? chunkEntry(z, u, v - 1) : null;
+	const south = present[z].has(u + "," + (v + 1)) ? chunkEntry(z, u, v + 1) : null;
+	const northVer = north ? north.ver : null, southVer = south ? south.ver : null;
+	const o = overlays.get(key);
+	if (o && o.ver === own.ver && o.claims === claimsVersion && o.north === northVer && o.south === southVer) return o.canvas;
+	const canvas = paintClaims(z, u, v, own.data, north && north.data, south && south.data, c);
+	overlays.set(key, { canvas, ver: own.ver, claims: claimsVersion, north: northVer, south: southVer });
+	return canvas;
+}
+/**
+ * Keeps the claims painted and the chunks files read for the pictures on screen (and the chunks of
+ * those above and below them), and forgets the rest once there are many.
+ */
+function trimClaims(z, sharp) {
+	const onScreen = new Set(), near = new Set();
+	for (const [u, v] of sharp) {
+		onScreen.add(tileKey(z, u, v));
+		for (const dv of [-1, 0, 1]) near.add(tileKey(z, u, v + dv));
+	}
+	if (overlays.size > onScreen.size + 24) {
+		for (const k of overlays.keys()) { if (overlays.size <= onScreen.size + 8) break; if (!onScreen.has(k)) overlays.delete(k); }
+	}
+	if (chunkData.size > near.size + 300) {
+		for (const [k, c] of chunkData) { if (chunkData.size <= near.size + 200) break; if (!near.has(k) && c.state !== "loading") chunkData.delete(k); }
+	}
+}
+function paintClaims(z, u, v, data, north, south, c) {
+	const size = map.tilePixels, per = size / CHUNK_COLUMNS;
+	const xs = new Array(CHUNK_COLUMNS + 2);
+	for (let col = -1; col <= CHUNK_COLUMNS; col++) xs[col + 1] = chunkX(z, u, col);
+	const owner = (cx, cz) => c.at.get(cx + "," + cz) || 0;
+	// Each column and row's owner: 0 for none, -1 for nothing shown.
+	const cells = (rows, tv) => {
+		if (!rows) return null;
+		return row => {
+			const base = chunkBase(z, tv, row), out = new Int32Array(CHUNK_COLUMNS);
+			for (let col = 0; col < CHUNK_COLUMNS; col++) {
+				const value = rows[row * CHUNK_COLUMNS + col];
+				out[col] = value === 0 ? -1 : owner(xs[col + 1], base + value - 128);
+			}
+			return out;
+		};
+	};
+	const ids = new Int32Array(size * CHUNK_COLUMNS);
+	const west = new Int32Array(size), east = new Int32Array(size);
+	let any = false;
+	for (let row = 0; row < size; row++) {
+		const base = chunkBase(z, v, row);
+		for (let col = 0; col < CHUNK_COLUMNS; col++) {
+			const value = data[row * CHUNK_COLUMNS + col];
+			const id = value === 0 ? 0 : owner(xs[col + 1], base + value - 128);
+			ids[row * CHUNK_COLUMNS + col] = id;
+			if (id) any = true;
+		}
+		// Past the picture's sides, which are chunk borders: the next chunk over, at the row's ground.
+		const first = data[row * CHUNK_COLUMNS], last = data[row * CHUNK_COLUMNS + CHUNK_COLUMNS - 1];
+		west[row] = first === 0 ? ids[row * CHUNK_COLUMNS] : owner(xs[0], base + first - 128);
+		east[row] = last === 0 ? ids[row * CHUNK_COLUMNS + CHUNK_COLUMNS - 1] : owner(xs[CHUNK_COLUMNS + 1], base + last - 128);
+	}
+	const canvas = document.createElement("canvas");
+	canvas.width = size; canvas.height = size;
+	if (!any) return canvas;
+	const edge = z === 0 ? 2 : 1;
+	// The rows past the top and bottom, nearest first; -1 where nothing is known there.
+	const northRow = cells(north, v - 1), southRow = cells(south, v + 1);
+	const above = [], below = [];
+	for (let k = 0; k < edge; k++) {
+		above.push(northRow ? northRow(size - 1 - k) : null);
+		below.push(southRow ? southRow(k) : null);
+	}
+	const at = (px, py) => {
+		if (py < 0) { const r = above[-py - 1]; return r ? r[Math.floor(px / per)] : -1; }
+		if (py >= size) { const r = below[py - size]; return r ? r[Math.floor(px / per)] : -1; }
+		if (px < 0) return west[py];
+		if (px >= size) return east[py];
+		return ids[py * CHUNK_COLUMNS + Math.floor(px / per)];
+	};
+	const g = canvas.getContext("2d");
+	const image = g.createImageData(size, size), out = image.data;
+	for (let py = 0; py < size; py++) for (let px = 0; px < size; px++) {
+		const id = ids[py * CHUNK_COLUMNS + Math.floor(px / per)];
+		if (id <= 0) continue;
+		let line = false;
+		for (let d = 1; d <= edge && !line; d++) {
+			const n = at(px, py - d), s = at(px, py + d);
+			line = at(px - d, py) !== id || at(px + d, py) !== id || (n !== -1 && n !== id) || (s !== -1 && s !== id);
+		}
+		const o = c.owners[id - 1], i = (py * size + px) * 4;
+		out[i] = o.rgb >> 16 & 255; out[i + 1] = o.rgb >> 8 & 255; out[i + 2] = o.rgb & 255;
+		out[i + 3] = line ? EDGE_ALPHA : o.forced ? FORCED_ALPHA : FILL_ALPHA;
+	}
+	g.putImageData(image, 0, 0);
+	return canvas;
+}
+
+/** The claim on the ground at a point of the screen, or null. */
+function claimAt(x, y) {
+	const c = dimClaims();
+	if (!c || !map) return null;
+	const mu = view.u + (x - canvas.clientWidth / 2) / view.scale, mv = view.v + (y - canvas.clientHeight / 2) / view.scale;
+	for (let z = zoomFor(view.scale); z < dim.zoomLevels; z++) {
+		const units = tileUnits(z), u = Math.floor(mu / units), v = Math.floor(mv / units);
+		const data = chunksOf(z, u, v);
+		if (!data) continue;
+		const col = Math.min(CHUNK_COLUMNS - 1, Math.floor((mu - u * units) / units * CHUNK_COLUMNS));
+		const row = Math.min(map.tilePixels - 1, Math.floor((mv - v * units) / units * map.tilePixels));
+		const value = data[row * CHUNK_COLUMNS + col];
+		if (value === 0) return null;
+		const id = c.at.get(chunkX(z, u, col) + "," + (chunkBase(z, v, row) + value - 128));
+		return id ? c.owners[id - 1] : null;
+	}
+	return null;
+}
+/** Who owns the land under the pointer, beside it, worded as the map in the game words it. */
+function showClaim(x, y) {
+	const o = claimAt(x, y), box = document.getElementById("claim");
+	if (!o) { box.hidden = true; return; }
+	box.textContent = "";
+	const swatch = document.createElement("i");
+	swatch.style.background = o.color;
+	box.appendChild(swatch);
+	box.appendChild(document.createTextNode(o.titled ? o.name : "Claimed by " + (o.name || "a team") + (o.forced ? " · force loaded" : "")));
+	box.hidden = false;
+	const w = box.offsetWidth, h = box.offsetHeight;
+	box.style.left = Math.max(12, Math.min(innerWidth - w - 12, x + 14)) + "px";
+	box.style.top = Math.max(12, Math.min(innerHeight - h - 12, y + 18)) + "px";
+}
+function hideClaim() { document.getElementById("claim").hidden = true; }
+
 function pick(d, first) {
 	const switched = !dim || !d || dim.id !== d.id;
 	dim = d || null;
@@ -205,6 +479,7 @@ function pick(d, first) {
 	empty.textContent = !map.live ? "The map is still being drawn. It fills in as the server draws it."
 		: dim ? "Nothing is mapped here yet. The map fills in as you explore." : "No map to show right now. It appears here while you're in a world with a map.";
 	if (first || switched) home(first);
+	if (switched) hideClaim();
 	// Each name says which dimension its player is in when it isn't this one.
 	if (switched) listPlayers();
 	draw();
@@ -392,7 +667,25 @@ function paint() {
 			ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
 		}
 	}
-	fillState = { wanted: sharp.length, loaded, any };
+	// Claims not yet painted where they will be: the list not yet in, or a picture's chunks file on its way.
+	let claimsPending = map.claims && claims === null ? 1 : 0;
+	// Claims over the sharp pictures drawn, the same size and filtered the same way.
+	if (dimClaims()) {
+		const units = tileUnits(z);
+		ctx.imageSmoothingEnabled = k < map.tilePixels / map.tileUnits / (1 << z);
+		for (const [u, v] of sharp) {
+			if (!tile(z, u, v)) continue;
+			const o = overlay(z, u, v);
+			const c = chunkData.get(tileKey(z, u, v));
+			// On its way, or waiting to be asked for again.
+			if (c && c.state !== "ready") claimsPending++;
+			if (!o) continue;
+			const x0 = sx(u * units), x1 = sx((u + 1) * units), y0 = sy(v * units), y1 = sy((v + 1) * units);
+			ctx.drawImage(o, x0, y0, x1 - x0, y1 - y0);
+		}
+		trimClaims(z, sharp);
+	}
+	fillState = { wanted: sharp.length, loaded, any, claimsPending };
 	// A marker stands on its block: the map point of X, Y, Z, as the map file's sin and cos place it.
 	for (const m of markers) if (m.dimension === dim.id) drawMarker(sx(m.x + 0.5), sy((m.z + 0.5) * map.sin - m.y * map.cos), dpr, m.name);
 	for (const p of players) if (p.dimension === dim.id) drawPlayer(sx(p.u), sy(p.v), dpr, p, p.name);
@@ -473,9 +766,14 @@ function drawPlayer(x, y, dpr, player, name) {
 // Panning and zooming, by mouse, wheel, touch and keys.
 const pointers = new Map();
 let last = null;
-canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, e); canvas.classList.add("dragging"); last = gesture(); });
+// A touch that lifts where it went down, alone, is a tap: it says whose land is there.
+let tap = null;
+canvas.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") hideClaim(); });
+canvas.addEventListener("pointerdown", e => { tap = !pointers.size ? { x: e.clientX, y: e.clientY } : null; if (e.pointerType === "mouse") hideClaim(); canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, e); canvas.classList.add("dragging"); last = gesture(); });
 canvas.addEventListener("pointermove", e => {
 	showWhere(e);
+	if (e.pointerType === "mouse" && !pointers.size) showClaim(e.clientX, e.clientY);
+	else if (pointers.has(e.pointerId) && tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) { tap = null; hideClaim(); }
 	if (!pointers.has(e.pointerId)) return;
 	pointers.set(e.pointerId, e);
 	const now = gesture();
@@ -491,6 +789,9 @@ canvas.addEventListener("pointermove", e => {
 for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, e => {
 	pointers.delete(e.pointerId);
 	last = gesture();
+	if (type === "pointerup" && tap && e.pointerType !== "mouse" && !pointers.size) showClaim(e.clientX, e.clientY);
+	else if (e.pointerType === "mouse" && !pointers.size) showClaim(e.clientX, e.clientY);
+	tap = null;
 	if (!pointers.size) { canvas.classList.remove("dragging"); saveHash(); }
 });
 function gesture() {
@@ -500,7 +801,7 @@ function gesture() {
 	const d = ps.length > 1 ? Math.hypot(ps[0].clientX - ps[1].clientX, ps[0].clientY - ps[1].clientY) : 1;
 	return { n: ps.length, x, y, d };
 }
-canvas.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.pow(2, -e.deltaY / (e.deltaMode ? 3 : 300))); draw(); saveHashSoon(); }, { passive: false });
+canvas.addEventListener("wheel", e => { e.preventDefault(); hideClaim(); zoomAt(e.clientX, e.clientY, Math.pow(2, -e.deltaY / (e.deltaMode ? 3 : 300))); draw(); saveHashSoon(); }, { passive: false });
 function limits() {
 	const native = map ? map.tilePixels / map.tileUnits : 4;
 	const coarsest = dim ? dim.zoomLevels - 1 : 0;

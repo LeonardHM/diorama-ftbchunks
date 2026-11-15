@@ -62,7 +62,7 @@ It shows only what every player already sees in the game:
 
 The server reads the claims every couple of seconds, a little at a time between ticks, and the page asks for them every 10 seconds, so changes show within about 15 seconds, longer on a server with very many claims. `/diorama-web status` says how many claimed chunks the page has and what reading them costs.
 
-Claims are never written to the map's folder: Diorama's own web server answers `claims.json` from memory, as it does `players.json`, so an unclaimed chunk or a team that hid its claims is gone from the page at the next read, and nothing is left behind when the server stops or you turn claims off. If you serve the folder yourself, the page shows claims only when your web server passes that one address on to Diorama's (see below); with `web-map-port=0` it shows none.
+Claims are never written to the map's folder: Diorama's own web server answers `claims.json` from memory, as it does `players.json`, so an unclaimed chunk or a team that hid its claims is gone from the page within a read or two (seconds), and nothing is left behind when the server stops or you turn claims off. If you serve the folder yourself, the page shows claims only when your web server passes that one address on to Diorama's (see below); with `web-map-port=0` it shows none.
 
 The first time the server starts with FTB Chunks or Open Parties and Claims installed and `web-map-claims` on, it draws the whole map again once, so every picture has its file of chunks. Pictures drawn while claims were off don't keep that file, so turning `web-map-claims` off and on again later draws the whole map again too.
 

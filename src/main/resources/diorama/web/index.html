@@ -211,13 +211,18 @@ function startClaims() {
 		if (!map.claims) { askingClaims = false; return; }
 		if (document.hidden) { setTimeout(ask, 2000); return; }
 		let again = 10000;
-		fetch("claims.json" + (claimsTag ? "?since=" + encodeURIComponent(claimsTag) : ""), { cache: "no-store" }).then(r => {
-			if (r.status === 204 && claims) return null;
+		// An answer that doesn't come in 8 seconds counts as none, like one that isn't claims.
+		const gaveUp = new AbortController(), timer = setTimeout(() => gaveUp.abort(), 8000);
+		fetch("claims.json" + (claimsTag ? "?since=" + encodeURIComponent(claimsTag) : ""), { cache: "no-store", signal: gaveUp.signal }).then(r => {
+			if (r.status === 204 && claims) return true;
 			if (!r.ok || r.status === 204) throw new Error("claims: " + r.status);
 			return r.json();
-		}).then(json => { if (json) showClaims(json); })
-			.catch(() => { again = 5000; showClaims(null); })
-			.finally(() => setTimeout(ask, again));
+		}).then(json => {
+			if (json === true) return;
+			if (!json || typeof json !== "object" || !map.claims) throw new Error("claims: none");
+			showClaims(json);
+		}).catch(() => { again = 5000; showClaims(null); })
+			.finally(() => { clearTimeout(timer); setTimeout(ask, again); });
 	};
 	ask();
 }
@@ -252,7 +257,8 @@ function showClaims(json) {
 }
 /** The claims of the dimension shown, or null when it has none. */
 function dimClaims() {
-	const c = claims && dim ? claims.get(dim.id) : null;
+	// None the moment the map file says the page shows none.
+	const c = claims && dim && map && map.claims ? claims.get(dim.id) : null;
 	return c && c.at.size ? c : null;
 }
 
@@ -272,7 +278,9 @@ function chunkEntry(z, u, v) {
 	if (ver === undefined) return null;
 	let c = chunkData.get(key);
 	const shown = c => !c ? null : c.state === "ready" ? (c.data ? c : null) : c.prev;
-	if (c && c.ver === ver && (c.state !== "failed" || c.retry > performance.now())) return shown(c);
+	// A file that wasn't there is asked for again after a minute: the server answers "not there" too when it can't read one for a moment.
+	const missing = c && c.state === "ready" && !c.data && c.again && c.again < performance.now();
+	if (c && c.ver === ver && !missing && (c.state !== "failed" || c.retry > performance.now())) return shown(c);
 	const prev = shown(c);
 	c = { state: "loading", data: null, ver, tries: c && c.ver === ver ? c.tries : 0, retry: 0, prev: prev ? { data: prev.data, ver: prev.ver } : null };
 	chunkData.set(key, c);
@@ -297,6 +305,7 @@ function chunkEntry(z, u, v) {
 			if (img.close) img.close();
 		}
 		mine.data = data; mine.state = "ready"; mine.prev = null;
+		mine.again = data ? 0 : performance.now() + 60000;
 		draw();
 	}).catch(() => {
 		// A server or proxy too busy for a moment: again shortly, later and later, as the pictures are.

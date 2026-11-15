@@ -176,29 +176,29 @@ final class WebClaims {
 				Thread.sleep(wait);
 				long started = System.nanoTime();
 				Cost cost = new Cost();
-				Map<Source, Map<String, Map<Long, Owner>>> reads = new IdentityHashMap<>();
-				for (Source source : this.sources) {
-					reads.put(source, this.read(source, cost));
-				}
-				if (this.stopping) {
-					return;
-				}
-				wait = Math.max(MIN_GAP_MS, cost.nanos * BUDGET / 1_000_000);
-				long took = System.nanoTime() - started;
-				// Until the next read is in, with room for it to take a few times as long.
-				long staleAfter = Math.max(STALE_MS * 1_000_000, 3 * (wait * 1_000_000 + took));
-				long now = System.nanoTime();
 				int chunks = 0;
 				for (Source source : this.sources) {
-					Map<String, Map<Long, Owner>> read = reads.get(source);
+					// Each mod's claims are on the page as soon as they're read, and as old as when their
+					// read began: a claim hidden or given up while a slow read went on is in it, and
+					// the read's age says so. A read that took longer than claims are trusted for is
+					// stale as it lands, and shows nothing.
+					long began = System.nanoTime();
+					Map<String, Map<Long, Owner>> read = this.read(source, cost);
+					if (this.stopping) {
+						return;
+					}
+					// Until the next read is in, with room for it to take a few times as long as this one.
+					long staleAfter = Math.max(STALE_MS * 1_000_000, 3 * (wait * 1_000_000 + System.nanoTime() - began));
 					// A mod that couldn't be read has nothing on the page until it's read again.
-					source.last = read == null ? null : new Snapshot(read, now, staleAfter);
+					source.last = read == null ? null : new Snapshot(read, began, staleAfter);
 					if (read != null) {
 						for (Map<Long, Owner> dimension : read.values()) {
 							chunks += dimension.size();
 						}
 					}
 				}
+				wait = Math.max(MIN_GAP_MS, cost.nanos * BUDGET / 1_000_000);
+				long took = System.nanoTime() - started;
 				this.summary = String.format(Locale.ROOT, "%d claimed chunks on the page; the last read took %.1f ms of the server thread in %d tasks (the longest %.2f ms) over %.1f s, and the next is in %.0f s",
 					chunks, cost.nanos / 1e6, cost.tasks, cost.longest / 1e6, took / 1e9, wait / 1000.0);
 			} catch (InterruptedException e) {

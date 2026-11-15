@@ -343,6 +343,8 @@
 	"diorama.radar_mobs.search": "モブを検索",
 	"diorama.settings.arrow_color": "矢印の色",
 	"diorama.settings.arrow_color.tooltip": "マップ／ミニマップ上に表示される自分自身の矢印の色",
+	"diorama.settings.arrow_size": "矢印のサイズ",
+	"diorama.settings.arrow_size.tooltip": "マップ／ミニマップ上に表示される自分自身の矢印の大きさ",
 	"diorama.settings.arrow_color.blue": "青色",
 	"diorama.settings.arrow_color.red": "赤色",
 	"diorama.settings.arrow_color.green": "緑色",

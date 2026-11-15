@@ -211,6 +211,11 @@ public final class SettingsScreen extends Screen {
 			//?} else {
 			/*i -> Component.translatable("diorama.settings.arrow_color." + Settings.ARROW_COLOR_NAMES[i]).withStyle(style -> style.withColor(Settings.ARROW_COLORS[i])));
 			*///?}
+		int arrowSizes = (Settings.MAX_ARROW_SIZE - Settings.MIN_ARROW_SIZE) / Settings.ARROW_SIZE_STEP + 1;
+		look.slider("arrow_size", (Settings.snapArrowSize(s.arrowSize) - Settings.MIN_ARROW_SIZE) / Settings.ARROW_SIZE_STEP, arrowSizes,
+			i -> s.arrowSize = Settings.MIN_ARROW_SIZE + i * Settings.ARROW_SIZE_STEP, i -> Component.literal((Settings.MIN_ARROW_SIZE + i * Settings.ARROW_SIZE_STEP) + "%"));
+		// Beside its colour, so the tab doesn't grow.
+		look.lastTwoSideBySide();
 
 		// Vanilla's tab bar, over the settings side instead of the whole screen. It's drawn by hand
 		// (extractRenderState), clipped to the side: its separator line runs on past the last tab.

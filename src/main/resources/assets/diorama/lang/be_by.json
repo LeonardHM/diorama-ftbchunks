@@ -343,6 +343,8 @@
     "diorama.radar_mobs.search": "Пошук мобаў",
     "diorama.settings.arrow_color": "Колер стрэлачкі",
     "diorama.settings.arrow_color.tooltip": "Колер вашай стрэлачкі на мапах.",
+    "diorama.settings.arrow_size": "Памер стрэлачкі",
+    "diorama.settings.arrow_size.tooltip": "Памер вашай стрэлачкі на мапах.",
     "diorama.settings.arrow_color.blue": "Сіні",
     "diorama.settings.arrow_color.red": "Чырвоны",
     "diorama.settings.arrow_color.green": "Зялёны",

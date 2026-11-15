@@ -154,24 +154,33 @@ function showPlayers(list) {
 }
 function listPlayers() {
 	const ul = document.getElementById("peopleList");
-	ul.innerHTML = "";
-	for (const p of players) {
-		const li = document.createElement("li"), b = document.createElement("button"), place = document.createElement("small");
-		b.textContent = p.name;
-		place.textContent = (dim && p.dimension !== dim.id ? nameOf(p.dimension) + "  " : "") + p.x + ", " + p.y + ", " + p.z;
-		b.appendChild(place);
-		// To where they are, in their dimension if the map has it.
-		b.onclick = () => {
-			const d = map.dimensions.find(d => d.id === p.dimension);
-			if (!d) return;
-			if (!dim || dim.id !== d.id) { pick(d, false); buildDims(); }
-			view.u = p.u; view.v = p.v;
-			view.scale = Math.max(view.scale, 2);
-			draw(); saveHash();
-		};
-		li.appendChild(b);
-		ul.appendChild(li);
+	// The same people as before keep their rows, which only say a new place: a row rebuilt each
+	// second would lose a click that began on it, and the keyboard's place in the list.
+	const same = ul.children.length === players.length && players.every((p, i) => ul.children[i].dataset.name === p.name);
+	if (!same) {
+		ul.innerHTML = "";
+		for (const p of players) {
+			const li = document.createElement("li"), b = document.createElement("button");
+			li.dataset.name = p.name;
+			b.appendChild(document.createTextNode(p.name));
+			b.appendChild(document.createElement("small"));
+			// To where they are now, in their dimension if the map has it.
+			b.onclick = () => {
+				const now = players.find(q => q.name === p.name);
+				const d = now && map.dimensions.find(d => d.id === now.dimension);
+				if (!d) return;
+				if (!dim || dim.id !== d.id) { pick(d, false); buildDims(); }
+				view.u = now.u; view.v = now.v;
+				view.scale = Math.max(view.scale, 2);
+				draw(); saveHash();
+			};
+			li.appendChild(b);
+			ul.appendChild(li);
+		}
 	}
+	players.forEach((p, i) => {
+		ul.children[i].querySelector("small").textContent = (dim && p.dimension !== dim.id ? nameOf(p.dimension) + "  " : "") + p.x + ", " + p.y + ", " + p.z;
+	});
 }
 document.getElementById("peopleButton").onclick = () => {
 	const ul = document.getElementById("peopleList");

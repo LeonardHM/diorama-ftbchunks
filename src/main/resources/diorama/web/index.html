@@ -61,6 +61,8 @@ let view = { u: 0, v: 0, scale: 1 };
 // The player's own map, served by their game (map.live): where they are, and whether the view stays on them.
 let player = null;       // player.json, or null when the game isn't in a world
 let follow = true;
+// The named places an operator marked on the server's map, from markers.json.
+let markers = [];
 // The server's map, when it shows them (map.players): everyone online it doesn't leave out, from players.json.
 let players = [];
 
@@ -74,6 +76,7 @@ function load(first) {
 		pick(map.dimensions.find(d => d.id === wanted) || map.dimensions[0], first);
 		buildDims();
 		if (map.live && !wasLive) startPlayer();
+		if (!map.live) loadMarkers();
 		if (!map.live && map.players && !asking) startPlayers();
 		// Turned off since: gone now, not at the next answer.
 		if (!map.players && players.length) showPlayers([]);
@@ -110,6 +113,16 @@ function showPlayerWhere() {
 	const where = document.getElementById("where");
 	where.hidden = false;
 	where.textContent = "X " + Math.floor(player.x) + "   Y " + Math.floor(player.y) + "   Z " + Math.floor(player.z);
+}
+
+// The markers, asked for as often as the map file. A map from before markers has no such file.
+function loadMarkers() {
+	fetch("markers.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : { markers: [] }).then(json => {
+		const list = Array.isArray(json.markers) ? json.markers.filter(m => m && typeof m.name === "string" && isFinite(m.x) && isFinite(m.y) && isFinite(m.z)) : [];
+		if (JSON.stringify(list) === JSON.stringify(markers)) return;
+		markers = list;
+		draw();
+	}).catch(() => {});
 }
 
 // Everyone on the server's map, asked for every second while the page shows.
@@ -369,8 +382,42 @@ function paint() {
 		}
 	}
 	fillState = { wanted: sharp.length, loaded, any };
+	// A marker stands on its block: the map point of X, Y, Z, as the map file's sin and cos place it.
+	for (const m of markers) if (m.dimension === dim.id) drawMarker(sx(m.x + 0.5), sy((m.z + 0.5) * map.sin - m.y * map.cos), dpr, m.name);
 	for (const p of players) if (p.dimension === dim.id) drawPlayer(sx(p.u), sy(p.v), dpr, p, p.name);
 	if (player && player.dimension === dim.id) drawPlayer(sx(player.u), sy(player.v), dpr, player, null);
+}
+
+// A marker: a pin standing on its spot, with its name over it.
+function drawMarker(x, y, dpr, name) {
+	ctx.save();
+	ctx.translate(x, y);
+	ctx.scale(dpr, dpr);
+	ctx.lineJoin = "round";
+	ctx.beginPath();
+	ctx.moveTo(0, 0);
+	ctx.bezierCurveTo(-3, -7, -8, -9, -8, -15);
+	ctx.arc(0, -15, 8, Math.PI, 0);
+	ctx.bezierCurveTo(8, -9, 3, -7, 0, 0);
+	ctx.closePath();
+	ctx.lineWidth = 3;
+	ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+	ctx.stroke();
+	ctx.fillStyle = "#ffc53d";
+	ctx.fill();
+	ctx.beginPath();
+	ctx.arc(0, -15, 3, 0, 2 * Math.PI);
+	ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+	ctx.fill();
+	ctx.font = "600 13px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+	ctx.textAlign = "center";
+	ctx.textBaseline = "bottom";
+	ctx.lineWidth = 4;
+	ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+	ctx.strokeText(name, 0, -26);
+	ctx.fillStyle = "#ffffff";
+	ctx.fillText(name, 0, -26);
+	ctx.restore();
 }
 
 // The player's arrow, as the map in the game draws it: pointing where they look, in their colour.

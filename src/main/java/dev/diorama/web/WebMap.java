@@ -93,6 +93,8 @@ public final class WebMap {
 	private final Object wake = new Object();
 	private final Thread thread;
 	private volatile @Nullable WebServer http;
+	/** The markers an operator placed on the page. */
+	final WebMarkers markers;
 	/** The players on the page, or null when the settings keep them off it. */
 	private final @Nullable WebPlayers players;
 	private volatile boolean stopping;
@@ -113,6 +115,7 @@ public final class WebMap {
 		// Where the server lets no map in the game show players, the page shows none either. Players
 		// come from the map's own web server, so there are none to show without it.
 		this.players = settings.players() && settings.port() > 0 && ShareServer.locks(server).radarAllowed() ? new WebPlayers(server, this::leftOut) : null;
+		this.markers = new WebMarkers(server.getWorldPath(LevelResource.ROOT).resolve("diorama-web-markers.json"), this.folder);
 		this.thread = new Thread(this::run, "Diorama web map");
 		this.thread.setDaemon(true);
 		this.thread.setPriority(Thread.MIN_PRIORITY);
@@ -209,6 +212,16 @@ public final class WebMap {
 	/** What the map is doing, for the status command. */
 	public String status() {
 		return this.status;
+	}
+
+	/** Whether the page has no map of the dimension with this ID: one the settings keep off it, or one this world doesn't have. */
+	boolean leftOut(String id) {
+		for (ServerLevel level : this.server.getAllLevels()) {
+			if (level.dimension().identifier().toString().equals(id)) {
+				return this.leftOut(level);
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -320,6 +333,8 @@ public final class WebMap {
 			if (!out.isEmpty()) {
 				Diorama.LOGGER.info("Web map: not drawing {}, which this server's settings keep off the map (map-off-dimensions, or cave maps locked for a dimension under a roof)", String.join(", ", out));
 			}
+			// The page's markers, without those of a dimension turned off since they were placed.
+			this.markers.publish(this::leftOut);
 			this.writeMapJson();
 			if (this.settings.port() > 0 && !this.stopping) {
 				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains, this.players == null ? null : this.players::json);

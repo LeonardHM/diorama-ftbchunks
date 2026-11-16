@@ -84,6 +84,7 @@
     "key.diorama.toggle_minimap": "Паказваць ці схаваць мінімапу",
     "key.diorama.enlarge_minimap": "Павялічыць мінімапу",
     "key.diorama.toggle_dimension": "Пераключыць вымярэнне мапы",
+    "key.diorama.toggle_waypoints_world": "Паказваць ці схаваць указальнікі ў свеце",
     "diorama.settings.button": "Налады",
     "diorama.waypoint.share": "Падзяліцца ў чаце",
     "diorama.waypoint.teleport": "Тэлепорт",

@@ -84,6 +84,7 @@
     "key.diorama.toggle_minimap": "Показать или скрыть мини-карту",
     "key.diorama.enlarge_minimap": "Увеличить мини-карту",
     "key.diorama.toggle_dimension": "Переключить измерение карты",
+    "key.diorama.toggle_waypoints_world": "Показать или скрыть точки в мире",
     "diorama.settings.button": "Настройки",
     "diorama.waypoint.share": "Поделиться в чате",
     "diorama.waypoint.teleport": "Телепортироваться",

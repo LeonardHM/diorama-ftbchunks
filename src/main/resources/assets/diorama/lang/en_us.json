@@ -84,6 +84,7 @@
 	"key.diorama.toggle_minimap": "Show or hide minimap",
 	"key.diorama.enlarge_minimap": "Enlarge minimap",
 	"key.diorama.toggle_dimension": "Toggle map dimension",
+	"key.diorama.toggle_waypoints_world": "Show or hide waypoints in the world",
 	"diorama.settings.button": "Settings",
 	"diorama.waypoint.share": "Share in chat",
 	"diorama.waypoint.teleport": "Teleport",

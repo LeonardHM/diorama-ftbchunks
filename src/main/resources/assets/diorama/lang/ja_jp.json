@@ -84,6 +84,7 @@
 	"key.diorama.toggle_minimap": "ミニマップを表示／非表示",
 	"key.diorama.enlarge_minimap": "ミニマップを大きく表示する",
 	"key.diorama.toggle_dimension": "マップのディメンションを切り替える",
+	"key.diorama.toggle_waypoints_world": "ワールド上のウェイポイントを表示／非表示",
 	"diorama.settings.button": "設定",
 	"diorama.waypoint.share": "チャットに共有",
 	"diorama.waypoint.teleport": "テレポート",

@@ -48,12 +48,15 @@ public final class DioramaClient {
 	public static final KeyMapping ENLARGE_MINIMAP = new KeyMapping("key.diorama.enlarge_minimap", InputConstants.UNKNOWN.getValue(), CATEGORY);
 	/** Works on the map, as its dimension button does; unbound, like Xaero's World Map's. */
 	public static final KeyMapping TOGGLE_DIMENSION = new KeyMapping("key.diorama.toggle_dimension", InputConstants.UNKNOWN.getValue(), CATEGORY);
+	/** Switches the Waypoints tab's "In the world", pins, labels and beams together; unbound, like Xaero's "Toggle In-World Waypoints". */
+	public static final KeyMapping TOGGLE_WAYPOINTS_WORLD = new KeyMapping("key.diorama.toggle_waypoints_world", InputConstants.UNKNOWN.getValue(), CATEGORY);
 	/** Every key binding, for the loader to register. */
-	public static final List<KeyMapping> KEY_MAPPINGS = List.of(OPEN_MAP, NEW_WAYPOINT, WAYPOINT_LIST, ZOOM_IN, ZOOM_OUT, SETTINGS, TOGGLE_MINIMAP, ENLARGE_MINIMAP, TOGGLE_DIMENSION);
+	public static final List<KeyMapping> KEY_MAPPINGS = List.of(OPEN_MAP, NEW_WAYPOINT, WAYPOINT_LIST, ZOOM_IN, ZOOM_OUT, SETTINGS, TOGGLE_MINIMAP, ENLARGE_MINIMAP, TOGGLE_DIMENSION, TOGGLE_WAYPOINTS_WORLD);
 
 	/** Switched by the enlarge key while {@link Settings#minimapEnlargeToggle} is on; off outside a world, as Xaero's, or with the setting off. */
 	private static boolean enlargeToggled;
 	private static boolean enlargeWasDown;
+	private static boolean waypointsKeyWasDown;
 
 	private DioramaClient() {
 	}
@@ -124,6 +127,17 @@ public final class DioramaClient {
 			s.minimap = !s.minimap;
 			s.save();
 		}
+		// Held past the key repeat delay the key keeps clicking: only a press that starts it counts.
+		boolean waypointsPressed = false;
+		while (TOGGLE_WAYPOINTS_WORLD.consumeClick()) {
+			waypointsPressed = true;
+		}
+		if (waypointsPressed && !waypointsKeyWasDown) {
+			Settings s = Settings.get();
+			s.waypointsInWorld = !s.waypointsInWorld;
+			s.save();
+		}
+		waypointsKeyWasDown = TOGGLE_WAYPOINTS_WORLD.isDown();
 		// Presses are taken with the setting off too, so ones made while holding don't count once it goes on.
 		// Held past the key repeat delay the key keeps clicking: only a press that starts it counts.
 		boolean pressed = false;

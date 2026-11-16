@@ -387,6 +387,7 @@
 	"diorama.map.baking": "区块处理中",
 	"key.diorama.enlarge_minimap": "增大小地图尺寸",
 	"key.diorama.toggle_dimension": "切换地图维度",
+	"key.diorama.toggle_waypoints_world": "显示或隐藏世界中的路径点",
 	"diorama.export.title": "导出图片",
 	"diorama.export.area": "区域",
 	"diorama.export.whole": "整张地图",

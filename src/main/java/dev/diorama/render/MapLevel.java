@@ -812,7 +812,7 @@ public final class MapLevel implements ChunkSource {
 		int size = Projection.TILE_PIXELS;
 		int tu0 = Math.floorDiv(pu0, size);
 		int tv0 = Math.floorDiv(pv0, size);
-		// No tiles for an area that's empty or given upside down.
+		// Never fewer than no tiles, for an area given upside down or back to front.
 		int columns = Math.max(0, Math.floorDiv(pu1 - 1, size) - tu0 + 1);
 		int rows = Math.max(0, Math.floorDiv(pv1 - 1, size) - tv0 + 1);
 		TileSurface[] tiles = new TileSurface[columns * rows];

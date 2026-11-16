@@ -1,6 +1,7 @@
 package dev.diorama.test;
 
 import dev.diorama.Diorama;
+import dev.diorama.Facing;
 import dev.diorama.MapScreen;
 import dev.diorama.MapSession;
 import dev.diorama.Projection;
@@ -38,6 +39,9 @@ final class CreateBuriedTest {
 		}
 		world.getServer().runCommand("time set noon");
 		context.waitFor(mc -> mc.player.onGround(), 600);
+		// The places below are worked out for a map facing north.
+		Facing savedFacing = context.computeOnClient(mc -> Projection.facing());
+		FacingTest.turnTo(context, Facing.NORTH);
 		BlockPos start = context.computeOnClient(mc -> mc.player.blockPosition());
 		int x = start.getX() + 8;
 		int z = aligned(context, start.getZ() + 8);
@@ -122,6 +126,7 @@ final class CreateBuriedTest {
 			}
 		} finally {
 			context.runOnClient(mc -> Settings.get().zoomStep(savedZoom));
+			FacingTest.turnTo(context, savedFacing);
 		}
 	}
 

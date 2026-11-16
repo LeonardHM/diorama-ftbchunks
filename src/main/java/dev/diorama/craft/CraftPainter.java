@@ -599,8 +599,8 @@ final class CraftPainter {
 
 	/**
 	 * The map pixels a craft's shadow may cover, as {pu0, pv0, pu1, pv1}, or null where the map
-	 * knows no ground. How far the shadow reaches depends on how low the ground is, so that's
-	 * found from the chunks first, around where the shadow would fall.
+	 * knows no ground, or the craft is under all of it. How far the shadow reaches depends on how
+	 * low the ground is, so that's found from the chunks first, around where the shadow would fall.
 	 */
 	private int @Nullable [] shadowArea(CraftBlocks blocks, double[] pose, MapStyle style) {
 		double[] c = Craft.center(pose, blocks);
@@ -631,6 +631,12 @@ final class CraftPainter {
 			(reach[2] + 1) * ppu,
 			(int) Math.ceil(((reach[3] + 1) * sin - lowest * cos) * ppu),
 		};
+		// The area runs from the craft's top down to the ground. A craft far enough under the ground
+		// the map shows (a mine lift, a drill in a cave) has its top below that, and the area comes
+		// out upside down: there's no ground there for its shadow.
+		if (area[3] <= area[1]) {
+			return null;
+		}
 		return area[2] - area[0] > CraftBaker.MAX_PIXELS || area[3] - area[1] > CraftBaker.MAX_PIXELS ? null : area;
 	}
 

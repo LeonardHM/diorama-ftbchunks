@@ -359,6 +359,9 @@ public class DioramaClientTest implements FabricClientGameTest {
 			if (tests.contains("aeronautics")) {
 				AeronauticsTest.run(context, world);
 			}
+			if (tests.contains("create-buried")) {
+				CreateBuriedTest.run(context, world);
+			}
 			if (tests.contains("roof-caves")) {
 				RoofCavesTest.run(context, world);
 			}

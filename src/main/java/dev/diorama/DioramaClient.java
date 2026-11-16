@@ -56,6 +56,7 @@ public final class DioramaClient {
 	/** Switched by the enlarge key while {@link Settings#minimapEnlargeToggle} is on; off outside a world, as Xaero's, or with the setting off. */
 	private static boolean enlargeToggled;
 	private static boolean enlargeWasDown;
+	private static boolean waypointsKeyWasDown;
 
 	private DioramaClient() {
 	}
@@ -126,11 +127,17 @@ public final class DioramaClient {
 			s.minimap = !s.minimap;
 			s.save();
 		}
+		// Held past the key repeat delay the key keeps clicking: only a press that starts it counts.
+		boolean waypointsPressed = false;
 		while (TOGGLE_WAYPOINTS_WORLD.consumeClick()) {
+			waypointsPressed = true;
+		}
+		if (waypointsPressed && !waypointsKeyWasDown) {
 			Settings s = Settings.get();
 			s.waypointsInWorld = !s.waypointsInWorld;
 			s.save();
 		}
+		waypointsKeyWasDown = TOGGLE_WAYPOINTS_WORLD.isDown();
 		// Presses are taken with the setting off too, so ones made while holding don't count once it goes on.
 		// Held past the key repeat delay the key keeps clicking: only a press that starts it counts.
 		boolean pressed = false;

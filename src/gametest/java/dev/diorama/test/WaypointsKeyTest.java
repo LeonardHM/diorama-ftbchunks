@@ -51,26 +51,35 @@ final class WaypointsKeyTest {
 		// Long enough for the commands' chat lines to fade.
 		context.waitTicks(220);
 		try {
+			// The minimap is in the top right corner with both pins on it; the world's are left of it.
 			BufferedImage shown = read(context.takeScreenshot("waypoints-key-01-shown"));
-			if (!has(shown, NEAR) || !has(shown, FAR)) {
-				throw new AssertionError("The two waypoints aren't on the screen before the key is pressed");
+			if (!has(world(shown), NEAR) || !has(world(shown), FAR)) {
+				throw new AssertionError("The two waypoints aren't drawn in the world before the key is pressed");
 			}
 			context.getInput().pressKey(DioramaClient.TOGGLE_WAYPOINTS_WORLD);
 			context.waitTicks(5);
 			if (context.computeOnClient(mc -> Settings.get().waypointsInWorld)) {
 				throw new AssertionError("Pressing the key didn't turn In the world off");
 			}
-			// The minimap is in the top right corner with both pins on it: only the world's go.
 			BufferedImage hidden = read(context.takeScreenshot("waypoints-key-02-hidden"));
-			int minimapLeft = hidden.getWidth() * 3 / 4;
-			if (has(hidden.getSubimage(0, 0, minimapLeft, hidden.getHeight()), NEAR) || has(hidden.getSubimage(0, 0, minimapLeft, hidden.getHeight()), FAR)) {
+			if (has(world(hidden), NEAR) || has(world(hidden), FAR)) {
 				throw new AssertionError("A waypoint is still drawn in the world after the key hid them");
 			}
-			context.getInput().pressKey(DioramaClient.TOGGLE_WAYPOINTS_WORLD);
+			if (!has(hidden, NEAR) || !has(hidden, FAR)) {
+				throw new AssertionError("The key took the waypoints off the minimap too");
+			}
+			// Held past the key repeat delay, a keyboard keeps clicking: that's still one press.
+			context.getInput().holdKey(DioramaClient.TOGGLE_WAYPOINTS_WORLD);
+			context.waitTicks(2);
+			for (int i = 0; i < 5; i++) {
+				context.runOnClient(mc -> net.minecraft.client.KeyMapping.click(InputConstants.getKey("key.keyboard.z")));
+				context.waitTicks(1);
+			}
+			context.getInput().releaseKey(DioramaClient.TOGGLE_WAYPOINTS_WORLD);
 			context.waitTicks(5);
 			BufferedImage back = read(context.takeScreenshot("waypoints-key-03-back"));
-			if (!context.computeOnClient(mc -> Settings.get().waypointsInWorld) || !has(back, NEAR) || !has(back, FAR)) {
-				throw new AssertionError("A second press didn't bring the waypoints in the world back");
+			if (!context.computeOnClient(mc -> Settings.get().waypointsInWorld) || !has(world(back), NEAR) || !has(world(back), FAR)) {
+				throw new AssertionError("A second press, held through key repeats, didn't bring the waypoints in the world back");
 			}
 		} finally {
 			context.runOnClient(mc -> {
@@ -82,6 +91,11 @@ final class WaypointsKeyTest {
 				net.minecraft.client.KeyMapping.resetMapping();
 			});
 		}
+	}
+
+	/** The screenshot without the quarter the minimap is in. */
+	private static BufferedImage world(BufferedImage shot) {
+		return shot.getSubimage(0, 0, shot.getWidth() * 3 / 4, shot.getHeight());
 	}
 
 	/** Whether enough of the picture is this colour to be a pin's head, and not a stray pixel. */

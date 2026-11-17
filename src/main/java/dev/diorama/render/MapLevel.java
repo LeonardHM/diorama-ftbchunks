@@ -1069,6 +1069,10 @@ public final class MapLevel implements ChunkSource {
 				return;
 			}
 			tile = new MapTile();
+			// Drawn as of now. A view that zoomed away before the bake was done never draws it, and
+			// left at 0 it counted as unused since the game started: the next trim dropped it, and
+			// the view baked it again on its way back, every time.
+			tile.lastDrawn = this.frame;
 			this.tiles.put(image.key(), tile);
 		}
 		tile.upload(image);
@@ -1554,7 +1558,11 @@ public final class MapLevel implements ChunkSource {
 				resident++;
 			}
 		}
-		if (resident <= MAX_GPU_TILES && this.frame % 600 != 0) {
+		// Over the limit the least recently drawn go, down to KEPT_TILES. The look every 600 updates
+		// is only for tiles nothing has drawn in a while: it used to trim to KEPT_TILES too, so a view
+		// showing more than that lost tiles it was drawing, and baked them again, every half minute.
+		boolean over = resident > MAX_GPU_TILES;
+		if (!over && this.frame % 600 != 0) {
 			return;
 		}
 		List<Map.Entry<TileKey, MapTile>> entries = new ArrayList<>(this.tiles.entrySet());
@@ -1563,7 +1571,7 @@ public final class MapLevel implements ChunkSource {
 		while (it.hasNext()) {
 			Map.Entry<TileKey, MapTile> e = it.next();
 			boolean stale = this.frame - e.getValue().lastDrawn > 3600;
-			if (resident <= KEPT_TILES && !stale) {
+			if ((resident <= KEPT_TILES || !over) && !stale) {
 				break;
 			}
 			if (!e.getValue().isEmpty()) {

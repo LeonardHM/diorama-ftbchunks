@@ -350,7 +350,7 @@ public final class XaeroChannels {
 			}
 			case TRACKER_RESET -> {
 				if (message.type() == trackerChannel) {
-					TrackedPlayers.clear();
+					TrackedPlayers.clearXaero();
 				}
 			}
 			default -> {
@@ -373,7 +373,7 @@ public final class XaeroChannels {
 		*///?}
 		if (trackerChannel == null || channel == MINIMAP && trackerChannel != MINIMAP) {
 			trackerChannel = channel;
-			TrackedPlayers.clear();
+			TrackedPlayers.clearXaero();
 		}
 		Message answer = new Message(channel, HANDSHAKE, ByteBuffer.allocate(4).putInt(PROTOCOL).array());
 		//? if fabric && >=1.21 {

@@ -27,6 +27,8 @@ public final class ShareClient {
 			if (locks != null) {
 				dev.diorama.ServerRules.onLocks(locks);
 			}
+		} else if (data[0] == ShareProtocol.FAR_PLAYERS) {
+			dev.diorama.TrackedPlayers.fromDiorama(data);
 		} else if (data[0] != ShareProtocol.SETTINGS) {
 			try (java.io.DataInputStream in = new java.io.DataInputStream(new java.io.ByteArrayInputStream(data))) {
 				SharedChunks.receive(in.readUnsignedByte(), in);

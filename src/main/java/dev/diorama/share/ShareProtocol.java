@@ -61,6 +61,14 @@ public final class ShareProtocol {
 	 * sends. Not tied to {@link #VERSION}: a client takes the keys it knows.
 	 */
 	public static final int LOCKS = 5;
+	/**
+	 * Server to client, a few times a second while it changes: the players this one sees from any
+	 * distance ({@link FarPlayers}), all of them each time. An empty string, where the shared map's
+	 * messages name a dimension, so a Diorama from before this message drops it; then a count, and
+	 * each player's UUID as two longs, their dimension, and the block they're in, x, y and z.
+	 * Not tied to {@link #VERSION}.
+	 */
+	public static final int FAR_PLAYERS = 6;
 	/** The most chunks one ask names, so it fits in a message to the server. */
 	public static final int MAX_ASK = 3000;
 	/** The biggest packed chunk sent; one past it is said not to be shared. */

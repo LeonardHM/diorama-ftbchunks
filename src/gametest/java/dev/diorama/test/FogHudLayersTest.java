@@ -37,6 +37,12 @@ final class FogHudLayersTest {
 		Settings.Quality quality = context.computeOnClient(mc -> Settings.get().quality);
 		List<Object> layers = context.computeOnClient(mc -> hudLayers(mc.gui));
 		int before = layers == null ? 0 : layers.size();
+		//? if neoforge && >=1.21.1 && <1.21.5 {
+		/*// Where the bug lived the list has to be found, or this would pass without testing it.
+		if (layers == null) {
+			throw new AssertionError("NeoForge's HUD layer list wasn't found on the GUI");
+		}
+		*///?}
 		try {
 			if (layers != null) {
 				context.runOnClient(mc -> addEmptyLayers(layers));

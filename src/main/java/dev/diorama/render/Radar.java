@@ -414,7 +414,7 @@ public final class Radar {
 	/** Whether the plate {@link #nameTag} draws would be wholly inside the circle. */
 	private static boolean nameInside(Circle circle, Blip blip, float text) {
 		float half = Minecraft.getInstance().font.width(blip.entity().getName().getString()) * text / 2.0F;
-		float top = blip.y() + nameOffset(blip) - text;
+		float top = blip.y() + nameOffset(blip) - 1;
 		return circle.contains(blip.x() - half - text, top) && circle.contains(blip.x() + half, top)
 			&& circle.contains(blip.x() - half - text, top + 9 * text) && circle.contains(blip.x() + half, top + 9 * text);
 	}
@@ -428,7 +428,8 @@ public final class Radar {
 		String name = blip.entity().getName().getString();
 		int w = font.width(name);
 		graphics.pose().pushMatrix();
-		graphics.pose().translate(blip.x() - w * text / 2.0F, blip.y() + nameOffset(blip));
+		// The plate's top stays where it is at the game's size, so bigger text grows down, away from the head.
+		graphics.pose().translate(blip.x() - w * text / 2.0F, blip.y() + nameOffset(blip) - 1 + text);
 		graphics.pose().scale(text);
 		graphics.fill(-1, -1, w, 8, withAlpha(0x40000000, alpha));
 		graphics.text(font, name, 0, 0, withAlpha(0xFFFFFFFF, alpha), false);

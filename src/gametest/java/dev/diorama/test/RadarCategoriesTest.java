@@ -128,7 +128,8 @@ final class RadarCategoriesTest {
 			inked[i] = nameInk(context, context.takeScreenshot("radar-categories-08-minimap-names-" + size));
 		}
 		context.runOnClient(mc -> Settings.get().minimapTextSize = 100);
-		if (inked[0] + 20 > inked[1] || inked[1] + 20 > inked[2]) {
+		// On a GUI scale of 1 the smallest size is 100% itself.
+		if (tried[0] < 100 && inked[0] + 20 > inked[1] || inked[1] + 20 > inked[2]) {
 			throw new AssertionError("The names on the minimap should grow with its Text size: at " + tried[0] + "%, 100% and 200% the map has "
 				+ inked[0] + ", " + inked[1] + " and " + inked[2] + " white pixels");
 		}

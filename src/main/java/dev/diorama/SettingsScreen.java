@@ -185,6 +185,11 @@ public final class SettingsScreen extends Screen {
 		waypoints.slider("waypoint_size_world", nearestIndex(pinSizes, s.waypointWorldSize), pinSizes.length, i -> s.waypointWorldSize = pinSizes[i], i -> Component.literal(pinSizes[i] + "%"));
 		waypoints.lastThreeSideBySide();
 		waypoints.open("teleport_command", Component.literal("/" + s.teleportCommand), () -> this.minecraft.gui.setScreen(new TeleportCommandScreen(this)));
+		// Beside the command: the tab has no room for another row.
+		int worldOpacities = (Settings.MAX_OPACITY - Settings.MIN_OPACITY) / Settings.OPACITY_STEP + 1;
+		waypoints.slider("waypoint_opacity", (Settings.snapOpacity(s.waypointWorldOpacity) - Settings.MIN_OPACITY) / Settings.OPACITY_STEP, worldOpacities,
+			i -> s.waypointWorldOpacity = Settings.MIN_OPACITY + i * Settings.OPACITY_STEP, i -> Component.literal((Settings.MIN_OPACITY + i * Settings.OPACITY_STEP) + "%"));
+		waypoints.lastTwoSideBySide(TEXT_SLIDER);
 
 		SettingsTab look = new SettingsTab("diorama.settings.look");
 		look.toggle("outlines", () -> s.outlines, v -> s.outlines = v);

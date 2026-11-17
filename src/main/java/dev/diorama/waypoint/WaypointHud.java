@@ -20,7 +20,7 @@ import net.minecraft.world.phys.Vec3;
  * Waypoints in the world: each one is projected through the game camera and drawn on the HUD as
  * a pin standing on its spot, with the distance under it, so it shows through terrain at any range. The name appears when it
  * is near the crosshair or close by, which keeps a screen full of waypoints readable. The World size
- * setting sizes the pin and Text size the text under it. Under the pins go the beams ({@link WaypointBeams})
+ * setting sizes the pin, Text size the text under it, and Opacity how solid all of it is, beams included. Under the pins go the beams ({@link WaypointBeams})
  * of the waypoints the beam setting picks.
  */
 public final class WaypointHud implements HudElement {
@@ -61,6 +61,7 @@ public final class WaypointHud implements HudElement {
 		List<Waypoint> waypoints = store.shownIn(dimension, store.in(dimension));
 		float scale = Pins.scale(Settings.get().waypointWorldSize);
 		float textScale = TextSize.scale(Settings.get().waypointWorldTextSize);
+		float opacity = Settings.snapOpacity(Settings.get().waypointWorldOpacity) / 100.0F;
 		// A pin stands above its spot, so a big one is still on screen with its spot well off it.
 		float margin = 28 * Math.max(1, scale);
 		Settings.Beams beamsShown = Settings.get().waypointBeams;
@@ -72,7 +73,7 @@ public final class WaypointHud implements HudElement {
 			/*// Drawn straight away here, at the depth the pins are given.
 			z = graphics.pose().last().pose().m32();
 			*///?}
-			this.beams.begin(mc.level, eye, width, height, z);
+			this.beams.begin(mc.level, eye, width, height, z, opacity);
 			try {
 				for (Waypoint waypoint : waypoints) {
 					if (WaypointBeams.has(waypoint, beamsShown) && WaypointStore.isShown(waypoint) && WaypointStore.isNear(waypoint, viewer)) {
@@ -120,14 +121,14 @@ public final class WaypointHud implements HudElement {
 			graphics.pose().pushMatrix();
 			graphics.pose().translate(sx, sy);
 			try {
-				Pins.standing(graphics, waypoint, 0, 0, Pins.LARGE, scale);
+				Pins.standing(graphics, waypoint, 0, 0, Pins.LARGE, scale, opacity);
 				if (text == null) {
 					continue;
 				}
 				graphics.pose().translate(-w * textScale / 2.0F, textScale + Pins.SHADOW * scale);
 				graphics.pose().scale(textScale);
-				graphics.fill(-2, -1, w + 2, 9, 0x80000000);
-				graphics.text(font, text, 0, 0, 0xFFFFFFFF, false);
+				graphics.fill(-2, -1, w + 2, 9, Math.round(0x80 * opacity) << 24);
+				graphics.text(font, text, 0, 0, Pins.alpha(opacity) << 24 | 0xFFFFFF, false);
 			} finally {
 				graphics.pose().popMatrix();
 			}

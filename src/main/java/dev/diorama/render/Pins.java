@@ -62,18 +62,23 @@ public final class Pins {
 
 	/** A pin at {@link #scale}, grown or shrunk about its point, which stays on (x, y). */
 	public static void standing(GuiGraphicsExtractor graphics, Waypoint waypoint, float x, float y, int size, float scale) {
+		standing(graphics, waypoint, x, y, size, scale, 1);
+	}
+
+	/** The same, {@code opacity} (0 to 1) as solid as the waypoint's colour makes it: a waypoint in the world. */
+	public static void standing(GuiGraphicsExtractor graphics, Waypoint waypoint, float x, float y, int size, float scale, float opacity) {
 		PinArt.Image icon = icon(waypoint);
 		if (icon != null) {
 			// Icon pins are one head size whatever the view: the head is what holds the icon.
 			Sprite sprite = sprite(ICON + "pin " + waypoint.icon + " " + rgb(waypoint), () -> PinArt.iconPin(icon, rgb(waypoint)));
-			draw(graphics, sprite, waypoint, x, y, scale);
+			draw(graphics, sprite, waypoint, x, y, scale, opacity);
 			return;
 		}
 		int head = PinArt.standingHead(size);
 		boolean death = waypoint.kind == Waypoint.Kind.DEATH;
 		int stretch = stretch(waypoint, head);
 		Sprite sprite = sprite("pin " + head + " " + stretch + " " + rgb(waypoint) + " " + death, () -> PinArt.standing(rgb(waypoint), death, head, stretch));
-		draw(graphics, sprite, waypoint, x, y, scale);
+		draw(graphics, sprite, waypoint, x, y, scale, opacity);
 	}
 
 	/** A round badge centred on (x, y): the waypoint list's rows. */
@@ -84,7 +89,7 @@ public final class Pins {
 			? sprite(ICON + "badge " + waypoint.icon + " " + rgb(waypoint), () -> PinArt.badge(rgb(waypoint), false, PinArt.iconHead(icon), 0, Double.NaN, 0, icon))
 			: sprite("badge " + head + " " + stretch(waypoint, head) + " " + rgb(waypoint) + " " + death,
 				() -> PinArt.badge(rgb(waypoint), death, head, stretch(waypoint, head), Double.NaN, 0, null));
-		draw(graphics, sprite, waypoint, x, y, 1);
+		draw(graphics, sprite, waypoint, x, y, 1, 1);
 	}
 
 	/**
@@ -101,7 +106,7 @@ public final class Pins {
 			? sprite(ICON + "edge " + waypoint.icon + " " + rgb(waypoint) + " " + step, () -> PinArt.badge(rgb(waypoint), false, PinArt.iconHead(icon), 0, snapped, 6, icon))
 			: sprite("edge " + head + " " + stretch(waypoint, head) + " " + rgb(waypoint) + " " + death + " " + step,
 				() -> PinArt.badge(rgb(waypoint), death, head, stretch(waypoint, head), snapped, caret, null));
-		draw(graphics, sprite, waypoint, x, y, scale);
+		draw(graphics, sprite, waypoint, x, y, scale, 1);
 	}
 
 	/** How wide this waypoint's badge is drawn with a head of {@code head}, without a caret. */
@@ -208,7 +213,7 @@ public final class Pins {
 		return sprite;
 	}
 
-	private static void draw(GuiGraphicsExtractor graphics, Sprite sprite, Waypoint waypoint, float x, float y, float scale) {
+	private static void draw(GuiGraphicsExtractor graphics, Sprite sprite, Waypoint waypoint, float x, float y, float scale, float opacity) {
 		PinArt.Art art = sprite.art();
 		// Keep the body and initials on one local pixel grid, moving continuously with the map.
 		graphics.pose().pushMatrix();
@@ -219,16 +224,16 @@ public final class Pins {
 		int h = art.image().height;
 		float edge = sprite.edge();
 		// A colour saved with no alpha at all is meant opaque; otherwise the pin keeps the colour's alpha.
-		int alpha = waypoint.color >>> 24 == 0 ? 0xFF : waypoint.color >>> 24;
+		int alpha = Math.round((waypoint.color >>> 24 == 0 ? 0xFF : waypoint.color >>> 24) * opacity);
 		MapCanvas.of(graphics).rect(sprite.texture(), Sampling.CLAMP_CRISP, 0, 0, w, h, 0, 0, w / edge, h / edge, alpha << 24 | 0xFFFFFF);
 		if (waypoint.kind != Waypoint.Kind.DEATH && art.labelX1() > art.labelX0()) {
-			label(graphics, waypoint, art.labelX0(), art.labelY0(), art.labelX1(), art.labelY1());
+			label(graphics, waypoint, art.labelX0(), art.labelY0(), art.labelX1(), art.labelY1(), opacity);
 		}
 		graphics.pose().popMatrix();
 	}
 
 	/** The initials at full size, centred on their ink in the head, which is drawn wide enough for them. */
-	private static void label(GuiGraphicsExtractor graphics, Waypoint waypoint, int x0, int y0, int x1, int y1) {
+	private static void label(GuiGraphicsExtractor graphics, Waypoint waypoint, int x0, int y0, int x1, int y1, float opacity) {
 		Font font = Minecraft.getInstance().font;
 		String text = waypoint.label();
 		if (text.isEmpty()) {
@@ -239,7 +244,15 @@ public final class Pins {
 		int x = PinArt.centred(x0, x1, ink(font, text));
 		// Capitals and digits are 7 pixels tall from the top of the line.
 		int y = PinArt.centred(y0, y1, 7);
-		graphics.text(font, text, x, y, light ? 0xFF000000 | PinArt.INK : 0xFFFFFFFF, !light);
+		graphics.text(font, text, x, y, alpha(opacity) << 24 | (light ? PinArt.INK : 0xFFFFFF), !light);
+	}
+
+	/**
+	 * The alpha of text {@code opacity} (0 to 1) solid. Never under 4: before 1.21.6 the game
+	 * draws text with less as fully solid.
+	 */
+	public static int alpha(float opacity) {
+		return Math.max(4, Math.round(255 * opacity));
 	}
 
 	/** Width of a string's ink: its advance less the one-pixel gap after the last glyph. */

@@ -376,6 +376,8 @@
     "diorama.settings.waypoint_size_map": "Мапа",
     "diorama.settings.waypoint_size_map.tooltip": "Памер указальнікаў на мапе. Крокі залежаць ад памеру інтэрфейсу, таму пікселі застаюцца выразнымі.",
     "diorama.settings.waypoint_text_size": "Тэкст",
+    "diorama.settings.waypoint_opacity": "Непразр.",
+    "diorama.settings.waypoint_opacity.tooltip": "Непразрыстасць пунктаў у свеце: значка, тэксту пад ім і слупа святла. Зменшыце яе, каб бачыць гульню скрозь іх. На мінімапе і мапе яны застаюцца непразрыстымі.",
     "diorama.settings.waypoint_size_world": "Свет",
     "diorama.settings.waypoint_size_world.tooltip": "Памер указальнікаў у свеце. Крокі залежаць ад памеру інтэрфейсу, таму пікселі застаюцца выразнымі.",
     "diorama.settings.teleport_command": "Каманда тэлепорта",

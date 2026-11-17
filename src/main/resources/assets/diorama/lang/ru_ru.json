@@ -376,6 +376,8 @@
     "diorama.settings.waypoint_size_map": "Карта",
     "diorama.settings.waypoint_size_map.tooltip": "Размер точек на карте. Шаги зависят от размера интерфейса, поэтому пиксели остаются четкими.",
     "diorama.settings.waypoint_text_size": "Текст",
+    "diorama.settings.waypoint_opacity": "Непрозр.",
+    "diorama.settings.waypoint_opacity.tooltip": "Непрозрачность точек в мире: значка, текста под ним и луча. Уменьшите её, чтобы видеть игру сквозь них. На миникарте и карте они остаются непрозрачными.",
     "diorama.settings.waypoint_size_world": "Мир",
     "diorama.settings.waypoint_size_world.tooltip": "Размер точек в мире. Шаги зависят от размера интерфейса, поэтому пиксели остаются четкими.",
     "diorama.settings.teleport_command": "Команда телепортации",

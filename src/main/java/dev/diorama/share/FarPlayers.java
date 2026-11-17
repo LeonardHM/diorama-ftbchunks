@@ -122,19 +122,22 @@ public final class FarPlayers {
 	static Who load(Path configFolder) {
 		Path file = configFolder.resolve(ShareSettings.FILE);
 		Properties properties = new Properties();
-		try {
-			if (Files.exists(file)) {
-				try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-					properties.load(reader);
-				}
+		if (Files.exists(file)) {
+			try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+				properties.load(reader);
+			} catch (IOException | IllegalArgumentException e) {
+				// The owner may have set it to off in there: without knowing, no one is shown.
+				Diorama.LOGGER.warn("Couldn't read {} in {}; players see no one from afar until it can be read", KEY, file, e);
+				return Who.OFF;
 			}
-			if (!properties.containsKey(KEY)) {
+		}
+		if (!properties.containsKey(KEY)) {
+			try {
 				Files.createDirectories(configFolder);
 				Files.writeString(file, (Files.exists(file) ? Files.readString(file, StandardCharsets.UTF_8) : "") + ABOUT + KEY + "=" + Who.TEAM.key() + "\n", StandardCharsets.UTF_8);
+			} catch (IOException e) {
+				Diorama.LOGGER.warn("Couldn't add {} to {}", KEY, file, e);
 			}
-		} catch (IOException | IllegalArgumentException e) {
-			Diorama.LOGGER.warn("Couldn't read or add {} in {}; using {}", KEY, file, Who.TEAM.key(), e);
-			return Who.TEAM;
 		}
 		String text = properties.getProperty(KEY, Who.TEAM.key()).trim().toLowerCase(Locale.ROOT);
 		for (Who who : Who.values()) {
@@ -142,8 +145,8 @@ public final class FarPlayers {
 				return who;
 			}
 		}
-		Diorama.LOGGER.warn("{} in {} is {}, which is none of team, everyone and off; using team", KEY, file, text);
-		return Who.TEAM;
+		Diorama.LOGGER.warn("{} in {} is {}, which is none of team, everyone and off; players see no one from afar", KEY, file, text);
+		return Who.OFF;
 	}
 
 	private void run() {

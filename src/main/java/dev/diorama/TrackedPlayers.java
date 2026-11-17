@@ -114,9 +114,17 @@ public final class TrackedPlayers {
 		STAND_INS.keySet().removeIf(id -> !FROM_DIORAMA.containsKey(id) && !PLAYERS.containsKey(id));
 	}
 
-	/** Whether the radar is drawing this entity for a player the client hasn't loaded. */
-	public static boolean isStandIn(net.minecraft.world.entity.Entity entity) {
-		return entity instanceof RemotePlayer && STAND_INS.containsValue(entity);
+	/**
+	 * Whether the server reports this player wherever they are, loaded by the client or not: a
+	 * teammate stays on the map at any height, near or far.
+	 */
+	public static boolean tracks(net.minecraft.world.entity.Entity entity) {
+		return entity instanceof net.minecraft.world.entity.player.Player && (FROM_DIORAMA.containsKey(entity.getUUID()) || PLAYERS.containsKey(entity.getUUID()));
+	}
+
+	/** Who Diorama on the server last said this player sees, for tests. */
+	public static java.util.Set<UUID> fromDiorama() {
+		return java.util.Set.copyOf(FROM_DIORAMA.keySet());
 	}
 
 	/** Xaero's tracker is about to send everyone again. */

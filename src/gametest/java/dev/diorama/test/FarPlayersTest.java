@@ -75,6 +75,7 @@ final class FarPlayersTest {
 			// Long enough for several sends: the two share no team.
 			context.waitTicks(100);
 			expect(wrong, far(context) == null, "with far-players=team and no team, the map has " + OTHER + " at " + far(context));
+			expect(wrong, context.computeOnClient(mc -> TrackedPlayers.fromDiorama().isEmpty()), "with far-players=team and no team, the server says where someone is");
 			photograph(context, at, "far-players-01-no-team");
 
 			if (ftb) {
@@ -111,7 +112,7 @@ final class FarPlayersTest {
 				waitForFar(context, x, at[2], "back in the Overworld", wrong);
 
 				server.command("ftbteams force-remove " + party + " " + OTHER + "\nftbteams force remove " + party + " " + OTHER);
-				waitForNone(context, "out of the party", wrong);
+				waitForUntold(context, "out of the party", wrong);
 			}
 			if (opac) {
 				SecondPlayer alice = (SecondPlayer) other;
@@ -135,17 +136,17 @@ final class FarPlayersTest {
 
 				// Their own setting, "Share Location With Party", which Xaero's Minimap follows too.
 				alice.command("opac player-config set parties.shareLocationWithParty false");
-				waitForNone(context, "not sharing their location with the party", wrong);
+				waitForUntold(context, "not sharing their location with the party", wrong);
 				alice.command("opac player-config set parties.shareLocationWithParty true");
 				waitForFar(context, x - 200, at[2] + 150, "sharing their location again", wrong);
 				// And the player's own, "Receive Locations From Party".
 				context.runOnClient(mc -> mc.getConnection().sendCommand("opac player-config set parties.receiveLocationsFromParty false"));
-				waitForNone(context, "in the party of a player who receives no locations", wrong);
+				waitForUntold(context, "in the party of a player who receives no locations", wrong);
 				context.runOnClient(mc -> mc.getConnection().sendCommand("opac player-config set parties.receiveLocationsFromParty true"));
 				waitForFar(context, x - 200, at[2] + 150, "with locations received again", wrong);
 
 				alice.command("oparties leave");
-				waitForNone(context, "out of the party", wrong);
+				waitForUntold(context, "out of the party", wrong);
 			}
 			leaves(other);
 			RealServer.leave(context);
@@ -162,7 +163,7 @@ final class FarPlayersTest {
 			waitForFar(context, at[0] + FAR, at[2], "with far-players=everyone", wrong);
 			photograph(context, at, "far-players-04-everyone");
 			leaves(other);
-			waitForNone(context, "offline", wrong);
+			waitForUntold(context, "offline", wrong);
 			RealServer.leave(context);
 		}
 
@@ -175,6 +176,7 @@ final class FarPlayersTest {
 			server.commandAndWait("tp " + OTHER + " " + (at[0] + FAR) + " 200 " + at[2], "Teleported " + OTHER, 120);
 			context.waitTicks(100);
 			expect(wrong, far(context) == null, "with far-players=off, the map has " + OTHER + " at " + far(context));
+			expect(wrong, context.computeOnClient(mc -> TrackedPlayers.fromDiorama().isEmpty()), "with far-players=off, the server says where someone is");
 			leaves(other);
 			RealServer.leave(context);
 		}
@@ -242,6 +244,16 @@ final class FarPlayersTest {
 			context.waitFor(mc -> TrackedPlayers.unloaded(mc.level).stream().noneMatch(player -> player.getScoreboardName().equals(OTHER)), 2400);
 		} catch (AssertionError e) {
 			wrong.add(OTHER + " is " + why + " and still on the map at " + far(context));
+		}
+	}
+
+	/** As {@link #waitForNone}, and the server has stopped saying where anyone is: not only undrawn, but untold. */
+	private static void waitForUntold(ClientGameTestContext context, String why, List<String> wrong) {
+		waitForNone(context, why, wrong);
+		try {
+			context.waitFor(mc -> TrackedPlayers.fromDiorama().isEmpty(), 200);
+		} catch (AssertionError e) {
+			wrong.add(OTHER + " is " + why + " and the server still says where " + context.computeOnClient(mc -> TrackedPlayers.fromDiorama()) + " is");
 		}
 	}
 

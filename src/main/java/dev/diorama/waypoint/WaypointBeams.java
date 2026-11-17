@@ -111,6 +111,8 @@ public final class WaypointBeams {
 	private float[] xyz = new float[12 * 32];
 	private float[] uvs = new float[8 * 32];
 	private int[] colors = new int[32];
+	/** How solid this frame's beams are, 0 to 1: the waypoints' opacity in the world. */
+	private float opacity = 1;
 	private int quads;
 
 	/** Whether a waypoint gets a beam under the setting. */
@@ -122,9 +124,10 @@ public final class WaypointBeams {
 		};
 	}
 
-	/** Starts a frame's beams, seen from {@code eye} in a GUI of {@code width} by {@code height}. */
-	void begin(ClientLevel level, Vec3 eye, float width, float height, float z) {
+	/** Starts a frame's beams, seen from {@code eye} in a GUI of {@code width} by {@code height}, {@code opacity} (0 to 1) solid. */
+	void begin(ClientLevel level, Vec3 eye, float width, float height, float z, float opacity) {
 		this.quads = 0;
+		this.opacity = opacity;
 		this.level = level;
 		if (this.seenIn.get() != level) {
 			// Another world or dimension: what was seen in the last one says nothing here.
@@ -190,7 +193,7 @@ public final class WaypointBeams {
 		float far = 1 - (1 - FAR_ALPHA) * (float) Math.max(0, Math.min(1, (distance - DIM_FROM) / (DIM_TO - DIM_FROM)));
 		// A colour saved with no alpha at all is meant opaque, as the pin draws it.
 		int saved = waypoint.color >>> 24 == 0 ? 0xFF : waypoint.color >>> 24;
-		float strength = near * (2 - near) * far * saved / 255.0F;
+		float strength = near * (2 - near) * far * this.opacity * saved / 255.0F;
 		int rgb = waypoint.color & 0xFFFFFF;
 		int edge = alpha(EDGE_ALPHA * strength) << 24 | edgeColor(rgb);
 		int core = alpha(CORE_ALPHA * strength) << 24 | coreColor(rgb);

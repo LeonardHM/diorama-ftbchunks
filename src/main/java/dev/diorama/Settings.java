@@ -183,6 +183,11 @@ public final class Settings {
 	 * text with it (#386).
 	 */
 	public int waypointWorldTextSize = 100;
+	/**
+	 * How solid waypoints are in the world, in percent, in the minimap opacity's steps: pin, text and
+	 * beam alike. Xaero's Minimap has the same setting, Waypoint Opacity in World (#412).
+	 */
+	public int waypointWorldOpacity = MAX_OPACITY;
 	/** The Waypoints and Settings buttons on the map. A modpack can hide them; their keys still open both. */
 	public boolean mapWaypointsButton = true;
 	public boolean mapSettingsButton = true;
@@ -581,6 +586,7 @@ public final class Settings {
 		settings.waypointMapSize = clampWaypointSize(settings.waypointMapSize);
 		settings.waypointWorldSize = clampWaypointSize(settings.waypointWorldSize);
 		settings.waypointWorldTextSize = clampTextSize(settings.waypointWorldTextSize);
+		settings.waypointWorldOpacity = snapOpacity(settings.waypointWorldOpacity);
 		settings.apply();
 		// Written now, so the file says it moved even if the player never changes a setting. One that
 		// couldn't be read stays as it is, for the player to mend.

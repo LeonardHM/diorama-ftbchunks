@@ -248,8 +248,8 @@ public final class Pins {
 	}
 
 	/**
-	 * The alpha of text {@code opacity} (0 to 1) solid. Never under 4: the game draws text with less
-	 * as if it had none, fully solid.
+	 * The alpha of text {@code opacity} (0 to 1) solid. Never under 4: before 1.21.6 the game
+	 * draws text with less as fully solid.
 	 */
 	public static int alpha(float opacity) {
 		return Math.max(4, Math.round(255 * opacity));

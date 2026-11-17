@@ -43,12 +43,16 @@ final class WaypointOpacityTest {
 		Settings.WaypointLabels labels = context.computeOnClient(mc -> Settings.get().waypointLabels);
 		Settings.Beams beams = context.computeOnClient(mc -> Settings.get().waypointBeams);
 		int minimapOpacity = context.computeOnClient(mc -> Settings.get().minimapOpacity);
+		boolean minimapShown = context.computeOnClient(mc -> Settings.get().minimap);
+		boolean onMaps = context.computeOnClient(mc -> Settings.get().waypointsOnMap);
 		context.runOnClient(mc -> {
 			Settings settings = Settings.get();
 			if (settings.waypointWorldOpacity != 100) {
 				throw new AssertionError("Waypoints in the world should start solid, not at " + settings.waypointWorldOpacity + "%");
 			}
 			settings.waypointLabels = Settings.WaypointLabels.ALWAYS;
+			settings.minimap = true;
+			settings.waypointsOnMap = true;
 			// No beams while the pins are measured: a beam stands behind its pin and tints what shows through.
 			settings.waypointBeams = Settings.Beams.OFF;
 			WaypointStore store = WaypointStore.get();
@@ -115,6 +119,8 @@ final class WaypointOpacityTest {
 				settings.waypointsInWorld = true;
 				settings.waypointWorldOpacity = 100;
 				settings.minimapOpacity = minimapOpacity;
+				settings.minimap = minimapShown;
+				settings.waypointsOnMap = onMaps;
 				settings.waypointLabels = labels;
 				settings.waypointBeams = beams;
 				settings.save();

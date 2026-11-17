@@ -31,7 +31,6 @@ final class WaypointOpacityTest {
 	static void run(ClientGameTestContext context, TestSingleplayerContext world) {
 		world.getServer().runCommand("time set noon");
 		world.getServer().runCommand("weather clear");
-		world.getServer().runCommand("difficulty peaceful");
 		int ground = world.getServer().computeOnServer(server -> server.overworld().getHeight(Heightmap.Types.MOTION_BLOCKING, -2, -2));
 		// A lit stone floor and wall: something to see through a pin, and nothing that moves.
 		world.getServer().runCommand("fill -20 " + ground + " -40 26 " + (ground + 12) + " 2 minecraft:air");

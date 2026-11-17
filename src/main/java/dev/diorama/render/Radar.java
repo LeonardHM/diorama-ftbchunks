@@ -156,6 +156,8 @@ public final class Radar {
 		// A round view can't cut icons to its circle, so it shows only those wholly inside it, as drawn:
 		// pixel heads use whole screen pixels per texel and can come out bigger than their size.
 		Circle circle = view.round() ? Circle.in(view) : null;
+		// Names on the minimap are part of its text, so its Text size sizes them (#412). The map has no such setting.
+		float text = fullscreen ? 1 : TextSize.scale(settings.minimapTextSize);
 		IconBatch measure = circle == null ? null : IconBatch.measuring(graphics);
 		if (!players) {
 			itemDots(icons, blips, circle);
@@ -175,9 +177,9 @@ public final class Radar {
 			icon(icons, blip, alpha, settings);
 			// On a round view, a mob's name only where it's wholly inside the circle, like the icons.
 			// Players' names are left as they were.
-			if (blip.named() && (players || circle == null || nameInside(circle, blip))) {
+			if (blip.named() && (players || circle == null || nameInside(circle, blip, text))) {
 				if (players) {
-					nameTag(graphics, blip, alpha);
+					nameTag(graphics, blip, alpha, text);
 				} else {
 					if (named == null) {
 						named = new ArrayList<>();
@@ -190,7 +192,7 @@ public final class Radar {
 		icons.draw();
 		if (named != null) {
 			for (Blip blip : named) {
-				nameTag(graphics, blip, alphaFor(blip.dy()));
+				nameTag(graphics, blip, alphaFor(blip.dy()), text);
 			}
 		}
 		if (measure != null) {
@@ -410,20 +412,24 @@ public final class Radar {
 	}
 
 	/** Whether the plate {@link #nameTag} draws would be wholly inside the circle. */
-	private static boolean nameInside(Circle circle, Blip blip) {
-		float half = Minecraft.getInstance().font.width(blip.entity().getName().getString()) / 2.0F;
-		float top = blip.y() + nameOffset(blip) - 1;
-		return circle.contains(blip.x() - half - 1, top) && circle.contains(blip.x() + half, top)
-			&& circle.contains(blip.x() - half - 1, top + 9) && circle.contains(blip.x() + half, top + 9);
+	private static boolean nameInside(Circle circle, Blip blip, float text) {
+		float half = Minecraft.getInstance().font.width(blip.entity().getName().getString()) * text / 2.0F;
+		float top = blip.y() + nameOffset(blip) - text;
+		return circle.contains(blip.x() - half - text, top) && circle.contains(blip.x() + half, top)
+			&& circle.contains(blip.x() - half - text, top + 9 * text) && circle.contains(blip.x() + half, top + 9 * text);
 	}
 
-	/** The player's or mob's name under its head, on the translucent dark plate vanilla puts name tags on. */
-	private static void nameTag(GuiGraphicsExtractor graphics, Blip blip, int alpha) {
+	/**
+	 * The player's or mob's name under its head, on the translucent dark plate vanilla puts name tags
+	 * on, {@code text} GUI pixels to a font pixel.
+	 */
+	private static void nameTag(GuiGraphicsExtractor graphics, Blip blip, int alpha, float text) {
 		Font font = Minecraft.getInstance().font;
 		String name = blip.entity().getName().getString();
 		int w = font.width(name);
 		graphics.pose().pushMatrix();
-		graphics.pose().translate(blip.x() - w / 2.0F, blip.y() + nameOffset(blip));
+		graphics.pose().translate(blip.x() - w * text / 2.0F, blip.y() + nameOffset(blip));
+		graphics.pose().scale(text);
 		graphics.fill(-1, -1, w, 8, withAlpha(0x40000000, alpha));
 		graphics.text(font, name, 0, 0, withAlpha(0xFFFFFFFF, alpha), false);
 		graphics.pose().popMatrix();

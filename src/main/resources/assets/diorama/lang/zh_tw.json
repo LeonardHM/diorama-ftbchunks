@@ -322,6 +322,8 @@
 	"diorama.settings.waypoint_size_map": "地圖",
 	"diorama.settings.waypoint_size_map.tooltip": "地圖上路徑點的大小。級距隨介面大小變化，以保持像素清晰。",
 	"diorama.settings.waypoint_text_size": "文字大小",
+	"diorama.settings.waypoint_opacity": "不透明度",
+	"diorama.settings.waypoint_opacity.tooltip": "世界中路徑點的不透明度,包括圖釘、下方的文字和光柱。調低後可以透過它們看到遊戲畫面。小地圖和地圖上的保持不變。",
 	"diorama.settings.waypoint_size_world": "世界",
 	"diorama.settings.waypoint_size_world.tooltip": "世界中路徑點的大小。級距隨介面大小變化，以保持像素清晰。",
 	"diorama.settings.teleport_command": "傳送指令",

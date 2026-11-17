@@ -379,6 +379,8 @@
 	"diorama.settings.waypoint_size_map.tooltip": "How big waypoints are drawn on the map. The steps follow your GUI scale, so the pixels stay sharp.",
 	"diorama.settings.waypoint_text_size": "Text size",
 	"diorama.settings.waypoint_text_size.tooltip": "How big the name and distance under waypoints in the world are. The steps follow your GUI scale, so the letters stay sharp.",
+	"diorama.settings.waypoint_opacity": "Opacity",
+	"diorama.settings.waypoint_opacity.tooltip": "How solid waypoints are in the world: the pin, the text under it and its beam. Lower it to see the game through them. The minimap and the map keep theirs solid.",
 	"diorama.settings.waypoint_size_world": "World",
 	"diorama.settings.waypoint_size_world.tooltip": "How big waypoints are drawn in the world. The steps follow your GUI scale, so the pixels stay sharp.",
 	"diorama.settings.teleport_command": "Teleport command",

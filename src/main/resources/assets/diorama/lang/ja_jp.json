@@ -376,6 +376,8 @@
 	"diorama.settings.waypoint_size_map": "マップ",
 	"diorama.settings.waypoint_size_map.tooltip": "マップ上のウェイポイントの大きさです。段階はGUIの大きさに合わせて変わるため、ピクセルがくっきり表示されます。",
 	"diorama.settings.waypoint_text_size": "文字サイズ",
+	"diorama.settings.waypoint_opacity": "不透明度",
+	"diorama.settings.waypoint_opacity.tooltip": "ワールド内のウェイポイントの不透明度(ピン、その下の文字、ビーム)。値を下げるとウェイポイント越しにゲーム画面が見えるようになります。ミニマップとマップ上のものは不透明なままです。",
 	"diorama.settings.waypoint_size_world": "ワールド",
 	"diorama.settings.waypoint_size_world.tooltip": "ワールド上のウェイポイントの大きさです。段階はGUIの大きさに合わせて変わるため、ピクセルがくっきり表示されます。",
 	"diorama.settings.teleport_command": "テレポートコマンド",

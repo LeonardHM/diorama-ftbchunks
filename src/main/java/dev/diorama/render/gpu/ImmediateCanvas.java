@@ -185,8 +185,22 @@ final class ImmediateCanvas implements MapCanvas {
 		mesh.vertex(width, height, 0).uv(u1, v1).color(params).endVertex();
 		mesh.vertex(0, height, 0).uv(u0, v1).color(params).endVertex();
 		//?}
-		// The GUI's model view only moves things back, so a wide depth range takes it in.
-		Matrix4f ortho = new Matrix4f().setOrtho(0, size, 0, size, 100, 30000);
+		// The layer's own depth as well as its own projection. The GUI's model view moves everything
+		// back by an amount that isn't fixed: NeoForge 1.21.1 to 1.21.4 adds 200 for every HUD layer
+		// mods register, and in a big pack that put the quad past any range chosen here, so nothing
+		// was drawn and the map showed no fog (#383).
+		Matrix4f ortho = new Matrix4f().setOrtho(0, size, 0, size, 1000, 3000);
+		//? if >=1.21 {
+		RenderSystem.getModelViewStack().pushMatrix();
+		RenderSystem.getModelViewStack().translation(0, 0, -2000);
+		//?} else {
+		RenderSystem.getModelViewStack().pushPose();
+		RenderSystem.getModelViewStack().setIdentity();
+		RenderSystem.getModelViewStack().translate(0, 0, -2000);
+		//?}
+		//? if <1.21.2 {
+		RenderSystem.applyModelViewMatrix();
+		//?}
 		RenderSystem.backupProjectionMatrix();
 		//? if >=1.21.2 {
 		RenderSystem.setProjectionMatrix(ortho, com.mojang.blaze3d.ProjectionType.ORTHOGRAPHIC);
@@ -213,6 +227,14 @@ final class ImmediateCanvas implements MapCanvas {
 		unbind(1);
 		unbind(2);
 		RenderSystem.restoreProjectionMatrix();
+		//? if >=1.21 {
+		RenderSystem.getModelViewStack().popMatrix();
+		//?} else {
+		RenderSystem.getModelViewStack().popPose();
+		//?}
+		//? if <1.21.2 {
+		RenderSystem.applyModelViewMatrix();
+		//?}
 		return true;
 	}
 

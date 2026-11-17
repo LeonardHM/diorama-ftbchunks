@@ -117,6 +117,22 @@ final class RadarCategoriesTest {
 		context.setScreen(() -> null);
 		context.waitTicks(10);
 		context.takeScreenshot("radar-categories-08-minimap-own-kept");
+		// The cows' names are the minimap's text: its Text size sizes them with the lines under it (#412).
+		int[] textSizes = context.computeOnClient(mc -> dev.diorama.render.TextSize.sizes());
+		int[] inked = new int[3];
+		int[] tried = {textSizes[0], 100, 200};
+		for (int i = 0; i < tried.length; i++) {
+			int size = tried[i];
+			context.runOnClient(mc -> Settings.get().minimapTextSize = size);
+			context.waitTicks(5);
+			inked[i] = nameInk(context, context.takeScreenshot("radar-categories-08-minimap-names-" + size));
+		}
+		context.runOnClient(mc -> Settings.get().minimapTextSize = 100);
+		// On a GUI scale of 1 the smallest size is 100% itself.
+		if (tried[0] < 100 && inked[0] + 20 > inked[1] || inked[1] + 20 > inked[2]) {
+			throw new AssertionError("The names on the minimap should grow with its Text size: at " + tried[0] + "%, 100% and 200% the map has "
+				+ inked[0] + ", " + inked[1] + " and " + inked[2] + " white pixels");
+		}
 		// Round: a name shows only where its plate fits inside the circle.
 		context.runOnClient(mc -> Settings.get().minimapShape = Settings.Shape.ROUND);
 		context.waitTicks(5);
@@ -328,6 +344,32 @@ final class RadarCategoriesTest {
 			Settings.get().save();
 		});
 		world.getServer().runCommand("kill @e[type=!player]");
+	}
+
+	/** How many pixels of the minimap's map are the white of the names: the lines under it aren't counted, and its compass keeps its own size. */
+	private static int nameInk(ClientGameTestContext context, java.nio.file.Path file) {
+		int[] at = context.computeOnClient(mc -> {
+			int[] shown = dev.diorama.MinimapHud.shown();
+			int scale = (int) mc.getWindow().getGuiScale();
+			return new int[] {shown[0] * scale, shown[1] * scale, shown[2] * scale};
+		});
+		java.awt.image.BufferedImage shot;
+		try {
+			shot = javax.imageio.ImageIO.read(file.toFile());
+		} catch (java.io.IOException e) {
+			throw new java.io.UncheckedIOException(e);
+		}
+		int white = 0;
+		for (int y = at[1]; y < at[1] + at[2]; y++) {
+			for (int x = at[0]; x < at[0] + at[2]; x++) {
+				int rgb = shot.getRGB(x, y);
+				// Before 1.21.6 the game draws text a shade off the colour it's given.
+				if ((rgb >> 16 & 0xFF) >= 251 && (rgb >> 8 & 0xFF) >= 251 && (rgb & 0xFF) >= 251) {
+					white++;
+				}
+			}
+		}
+		return white;
 	}
 
 	private static void expectScreen(ClientGameTestContext context, Class<?> type) {

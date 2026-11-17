@@ -88,7 +88,7 @@ public final class Settings {
 	public boolean biome = true;
 	public GameTime gameTime = GameTime.OFF;
 	/**
-	 * How big the lines under the minimap are, in percent of the game's own text:
+	 * How big the lines under the minimap and the names on it are, in percent of the game's own text:
 	 * {@link #MIN_TEXT_SIZE} to {@link #MAX_TEXT_SIZE}. {@code TextSize.scale} rounds it to
 	 * whole screen pixels.
 	 */

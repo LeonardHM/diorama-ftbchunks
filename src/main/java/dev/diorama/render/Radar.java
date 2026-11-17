@@ -115,7 +115,9 @@ public final class Radar {
 				continue;
 			}
 			Vec3 pos = entity.getPosition(partialTick);
-			if (Math.abs(pos.y - selfY) > range) {
+			// A player the server reports from afar is one the player is looking for, at whatever height,
+			// and stays on the map as they come near: the caret says which way.
+			if (Math.abs(pos.y - selfY) > range && !TrackedPlayers.tracks(entity)) {
 				continue;
 			}
 			float x = view.screenX(Projection.u(pos.x, pos.z));

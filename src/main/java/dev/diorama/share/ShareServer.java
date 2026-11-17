@@ -89,7 +89,9 @@ public final class ShareServer {
 		}
 		ShareSettings settings = ShareSettings.load(configFolder);
 		// After the share settings, which write the file the first time.
-		lock(server, ServerLocks.load(configFolder, true));
+		ServerLocks locks = ServerLocks.load(configFolder, true);
+		lock(server, locks);
+		FarPlayers.started(server, configFolder, locks);
 		ShareServer share = new ShareServer(server, settings);
 		running = share;
 		if (settings.share()) {
@@ -119,6 +121,7 @@ public final class ShareServer {
 	}
 
 	public static void stopped(MinecraftServer server) {
+		FarPlayers.stopped(server);
 		Locked locks = locked;
 		if (locks != null && locks.server == server) {
 			locked = null;
@@ -146,6 +149,7 @@ public final class ShareServer {
 			return;
 		}
 		ShareProtocol.send(player, share.settings.encode());
+		FarPlayers.listening(player);
 	}
 
 	/** A message from a player's Diorama. Server thread. */

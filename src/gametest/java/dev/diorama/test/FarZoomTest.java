@@ -225,8 +225,13 @@ final class FarZoomTest {
 		// than stay loaded, so until they fit the map draws the first overview level and comes to rest.
 		int scale = context.computeOnClient(mc -> mc.options.guiScale().get());
 		DioramaClientTest.setGuiScale(context, 1);
-		for (double zoom : new double[] {0.5, 0.75}) {
+		for (double zoom : new double[] {0.5, 0.6}) {
 			double[] step = {u0 + width * units, v0 + height * units, zoom};
+			// Only a window this wide shows more detailed tiles than stay loaded: boat.dev's is 1600 by 900.
+			int detailed = context.computeOnClient(mc -> (int) (Math.ceil(mc.getWindow().getGuiScaledWidth() / zoom / units) * Math.ceil(mc.getWindow().getGuiScaledHeight() / zoom / units)));
+			if (detailed <= KEPT_TILES) {
+				throw new AssertionError("The window is too small for the wide view: at zoom " + zoom + " it shows " + detailed + " detailed tiles, no more than the " + KEPT_TILES + " that stay loaded");
+			}
 			context.runOnClient(mc -> ((MapScreen) mc.gui.screen()).lookAt(step[0], step[1], step[2], TileKey.SURFACE));
 			context.waitTick();
 			String name = String.format("far-zoom-wide-%.2f", zoom);

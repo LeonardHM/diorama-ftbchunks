@@ -31,8 +31,8 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
  *
  * <p>Checks that the overview levels reach {@link TileKey#MAX_LOD}, that a map saved without the
  * levels above 5 gets them when it's opened, that the map stops at a 512-block region a screen
- * pixel, and that at every step out the view asks for no more tiles than stay loaded and ends up
- * with all of them. Pictures of each step, first frame and settled, are for looking at.
+ * pixel, and that at every step out, and on a wide view where the detailed tiles start, the view
+ * asks for no more tiles than stay loaded and ends up with all of them. Pictures of each step, first frame and settled, are for looking at.
  */
 final class FarZoomTest {
 	private static final int SPREAD = 320;
@@ -221,6 +221,21 @@ final class FarZoomTest {
 			context.takeScreenshot(name + "-b-settled");
 			check(context, store, step, name + " settled", true);
 		}
+		// A wide view where the detailed tiles start: a big screen at GUI scale 1 shows more of them
+		// than stay loaded, so until they fit the map draws the first overview level and comes to rest.
+		int scale = context.computeOnClient(mc -> mc.options.guiScale().get());
+		DioramaClientTest.setGuiScale(context, 1);
+		for (double zoom : new double[] {0.5, 0.75}) {
+			double[] step = {u0 + width * units, v0 + height * units, zoom};
+			context.runOnClient(mc -> ((MapScreen) mc.gui.screen()).lookAt(step[0], step[1], step[2], TileKey.SURFACE));
+			context.waitTick();
+			String name = String.format("far-zoom-wide-%.2f", zoom);
+			check(context, store, step, name + " first frame", false);
+			DioramaClientTest.settle(context, 20);
+			context.takeScreenshot(name + "-settled");
+			check(context, store, step, name + " settled", true);
+		}
+		DioramaClientTest.setGuiScale(context, scale);
 		context.setScreen(() -> null);
 	}
 

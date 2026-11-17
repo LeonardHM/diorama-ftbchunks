@@ -471,6 +471,9 @@ public class DioramaClientTest implements FabricClientGameTest {
 		if (tests.contains("web-map-markers")) {
 			WebMapMarkersTest.run(context);
 		}
+		if (tests.contains("far-players")) {
+			FarPlayersTest.run(context);
+		}
 		if (tests.contains("web-map-players")) {
 			WebMapPlayersTest.run(context);
 		}

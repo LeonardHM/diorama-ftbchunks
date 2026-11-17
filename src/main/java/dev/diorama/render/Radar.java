@@ -115,7 +115,8 @@ public final class Radar {
 				continue;
 			}
 			Vec3 pos = entity.getPosition(partialTick);
-			if (Math.abs(pos.y - selfY) > range) {
+			// A player shown from afar is one the player is looking for, at whatever height: the caret says which way.
+			if (Math.abs(pos.y - selfY) > range && !TrackedPlayers.isStandIn(entity)) {
 				continue;
 			}
 			float x = view.screenX(Projection.u(pos.x, pos.z));

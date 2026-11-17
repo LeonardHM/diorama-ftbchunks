@@ -5,7 +5,8 @@
 	"name": "Diorama test",
 	"environment": "client",
 	"entrypoints": {
-		"fabric-client-gametest": ["dev.diorama.test.DioramaClientTest"]
+		"fabric-client-gametest": ["dev.diorama.test.DioramaClientTest"],
+		"client": ["dev.diorama.test.Puppet"]
 	},
 	"depends": {
 		"diorama": "*"

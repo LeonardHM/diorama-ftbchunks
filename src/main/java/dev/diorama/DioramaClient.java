@@ -16,6 +16,7 @@ import dev.diorama.waypoint.XaeroNotice;
 import java.util.List;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 /**
  * What Diorama does on the client, whichever mod loader runs it: its key bindings, and what it does
@@ -50,13 +51,19 @@ public final class DioramaClient {
 	public static final KeyMapping TOGGLE_DIMENSION = new KeyMapping("key.diorama.toggle_dimension", InputConstants.UNKNOWN.getValue(), CATEGORY);
 	/** Switches the Waypoints tab's "In the world", pins, labels and beams together; unbound, like Xaero's "Toggle In-World Waypoints". */
 	public static final KeyMapping TOGGLE_WAYPOINTS_WORLD = new KeyMapping("key.diorama.toggle_waypoints_world", InputConstants.UNKNOWN.getValue(), CATEGORY);
+	/**
+	 * Turns the map a quarter, as the facing button on the map does, there and in the world, where the
+	 * minimap turns with it. Unbound; Xaero's maps don't turn, so there is no key of theirs to match.
+	 */
+	public static final KeyMapping TURN_MAP = new KeyMapping("key.diorama.turn_map", InputConstants.UNKNOWN.getValue(), CATEGORY);
 	/** Every key binding, for the loader to register. */
-	public static final List<KeyMapping> KEY_MAPPINGS = List.of(OPEN_MAP, NEW_WAYPOINT, WAYPOINT_LIST, ZOOM_IN, ZOOM_OUT, SETTINGS, TOGGLE_MINIMAP, ENLARGE_MINIMAP, TOGGLE_DIMENSION, TOGGLE_WAYPOINTS_WORLD);
+	public static final List<KeyMapping> KEY_MAPPINGS = List.of(OPEN_MAP, NEW_WAYPOINT, WAYPOINT_LIST, ZOOM_IN, ZOOM_OUT, SETTINGS, TOGGLE_MINIMAP, ENLARGE_MINIMAP, TOGGLE_DIMENSION, TOGGLE_WAYPOINTS_WORLD, TURN_MAP);
 
 	/** Switched by the enlarge key while {@link Settings#minimapEnlargeToggle} is on; off outside a world, as Xaero's, or with the setting off. */
 	private static boolean enlargeToggled;
 	private static boolean enlargeWasDown;
 	private static boolean waypointsKeyWasDown;
+	private static boolean turnKeyWasDown;
 
 	private DioramaClient() {
 	}
@@ -138,6 +145,22 @@ public final class DioramaClient {
 			s.save();
 		}
 		waypointsKeyWasDown = TOGGLE_WAYPOINTS_WORLD.isDown();
+		// A turn redraws the whole map, so a held key turns it once.
+		boolean turnPressed = false;
+		while (TURN_MAP.consumeClick()) {
+			turnPressed = true;
+		}
+		if (turnPressed && !turnKeyWasDown && mc.gui.screen() == null && mc.level != null && !ServerRules.sayMapOffHere(mc) && ServerRules.minimapAllowed()
+			&& MapSession.turn(1)) {
+			// The minimap may be hidden: say which way the map now looks.
+			Component facing = Component.translatable("diorama.map.facing." + Projection.facing().id());
+			//? if >=26.1 {
+			mc.gui.hud.setOverlayMessage(facing, false);
+			//?} else {
+			/*mc.gui.setOverlayMessage(facing, false);
+			*///?}
+		}
+		turnKeyWasDown = TURN_MAP.isDown();
 		// Presses are taken with the setting off too, so ones made while holding don't count once it goes on.
 		// Held past the key repeat delay the key keeps clicking: only a press that starts it counts.
 		boolean pressed = false;

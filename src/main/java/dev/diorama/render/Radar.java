@@ -101,6 +101,9 @@ public final class Radar {
 		// the surface view.
 		double range = settings.radarRange;
 		float margin = 12;
+		// Held, the player list key (Tab) names everything on the minimap, as it brings out names and
+		// icons on Xaero's: a dot or a face the player doesn't know says what it is without opening the map.
+		boolean listing = !fullscreen && mc.options.keyPlayerList.isDown();
 		for (Entity entity : Iterables.concat(level.entitiesForRendering(), TrackedPlayers.unloaded(level))) {
 			// The one the map follows is the arrow in its middle.
 			if (entity == self || entity == viewer || !entity.isAlive() || entity.isInvisibleTo(self)) {
@@ -127,7 +130,7 @@ public final class Radar {
 			}
 			int percent = category.iconScale() == RadarCategories.SAME_SIZE ? settings.radarIconScale : category.iconScale();
 			Settings.NameTags names = category.hasNames() ? category.names() : Settings.NameTags.NEVER;
-			boolean named = names == Settings.NameTags.ALWAYS || names == Settings.NameTags.FULLSCREEN && fullscreen;
+			boolean named = names == Settings.NameTags.ALWAYS || names == Settings.NameTags.FULLSCREEN && fullscreen || listing && category.hasNames();
 			blips.add(new Blip(entity, kind, x, y, pos.y - selfY, size(kind, percent / 100.0F, view.zoom(), fullscreen), named));
 		}
 		blips.sort(Comparator.comparingInt(b -> b.kind().ordinal()));

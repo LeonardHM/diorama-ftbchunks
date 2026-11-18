@@ -191,6 +191,7 @@ public final class ChunkyBorders {
 		}
 		// Registering a handler also tells the server Diorama listens here, which Paper needs.
 		ClientPlayNetworking.registerGlobalReceiver(Payload.TYPE, (payload, context) -> receive(payload.bytes()));
+		Diorama.LOGGER.info("Diorama listens on {} for Chunky Border's border", CHANNEL);
 	}
 	//?} else if fabric {
 	/*// Listens on the channel, unless the add-on is installed here. Call once, at startup, after every mod has.
@@ -207,7 +208,9 @@ public final class ChunkyBorders {
 		});
 		if (!registered) {
 			Diorama.LOGGER.info("Another mod has {}, so Diorama doesn't show Chunky Border's border", CHANNEL);
+			return;
 		}
+		Diorama.LOGGER.info("Diorama listens on {} for Chunky Border's border", CHANNEL);
 	}
 	*///?} else if neoforge {
 	/*// Listens on the channel, unless the add-on is installed here. NeoForge calls it once, at startup.
@@ -223,7 +226,9 @@ public final class ChunkyBorders {
 			event.registrar("0").optional().playToClient(Payload.TYPE, Payload.CODEC, (payload, context) -> receive(payload.bytes()));
 		} catch (UnsupportedOperationException e) {
 			Diorama.LOGGER.info("Another mod has {}, so Diorama doesn't show Chunky Border's border", CHANNEL);
+			return;
 		}
+		Diorama.LOGGER.info("Diorama listens on {} for Chunky Border's border", CHANNEL);
 	}
 	*///?} else {
 	/*// Listens on the channel, unless the add-on is installed here. Call once, after every mod has loaded.
@@ -252,6 +257,7 @@ public final class ChunkyBorders {
 			receive(bytes);
 			event.getSource().get().setPacketHandled(true);
 		});
+		Diorama.LOGGER.info("Diorama listens on {} for Chunky Border's border", CHANNEL);
 	}
 	*///?}
 }

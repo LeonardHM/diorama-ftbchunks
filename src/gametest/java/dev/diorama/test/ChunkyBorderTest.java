@@ -161,7 +161,7 @@ final class ChunkyBorderTest {
 				server.command(command);
 			}
 			// The add-on's message, read off the network by Diorama itself.
-			ChunkyBorder.Shape square = waitForShape(context, shape -> shape.corners() == 4, "a square from the server");
+			ChunkyBorder.Shape square = fromServer(context, server, shape -> shape.corners() == 4, "a square from the server");
 			ChunkyBorder.Shape heard = context.computeOnClient(mc -> ChunkyBorders.heardForTests().get(OVERWORLD));
 			if (heard == null || !heard.same(square)) {
 				wrong.add("The square isn't the one heard on the channel: " + heard);
@@ -183,7 +183,7 @@ final class ChunkyBorderTest {
 			// A star, as the add-on makes it: ten corners.
 			server.command("chunky shape star");
 			server.command("chunky border add");
-			ChunkyBorder.Shape star = waitForShape(context, shape -> shape.corners() == 10, "a star from the server");
+			ChunkyBorder.Shape star = fromServer(context, server, shape -> shape.corners() == 10, "a star from the server");
 			DioramaClientTest.settle(context, 20);
 			checkLines(context, at, star, "a star from the server", wrong);
 			pictures(context, at, "server-star", wrong);
@@ -191,7 +191,18 @@ final class ChunkyBorderTest {
 			ClientWebMapTest.photograph(page + view, out.resolve("server-star.png"));
 
 			server.command("chunky border remove");
-			context.waitFor(mc -> ChunkyBorders.shape(mc.level) == null, 600);
+			try {
+				context.waitFor(mc -> ChunkyBorders.shape(mc.level) == null, 300);
+			} catch (AssertionError e) {
+				// As a new border, on the add-on's older NeoForge builds: gone once the player joins again.
+				RealServer.leave(context);
+				server.join(context);
+				context.waitFor(mc -> MapSession.get() != null, 2400);
+				context.waitTicks(100);
+				if (context.computeOnClient(mc -> ChunkyBorders.shape(mc.level)) != null) {
+					wrong.add("The removed border is still on the map after joining again");
+				}
+			}
 			String[] text = {""};
 			int[] asked = {0};
 			try {
@@ -224,16 +235,49 @@ final class ChunkyBorderTest {
 		return out;
 	}
 
+	/**
+	 * The border the server sends. The add-on's NeoForge builds up to 1.2.23 send it only as a player
+	 * enters a dimension, not when it changes: there the player meets a new border by joining again.
+	 */
+	private static ChunkyBorder.Shape fromServer(ClientGameTestContext context, RealServer server, Predicate<ChunkyBorder.Shape> wanted, String what) {
+		try {
+			return waitForShape(context, wanted, what, 300);
+		} catch (AssertionError e) {
+			Diorama.LOGGER.info("chunky-border: {} didn't come while the player was there: joining again", what);
+			BlockPos at = context.computeOnClient(mc -> mc.player.blockPosition());
+			RealServer.leave(context);
+			server.join(context);
+			context.waitFor(mc -> MapSession.get() != null && MapSession.get().map().chunkCount() > 50, 2400);
+			server.command("tp @a " + (at.getX() + 0.5) + " " + at.getY() + " " + (at.getZ() + 0.5) + " 180 90");
+			return waitForShape(context, wanted, what);
+		}
+	}
+
 	private static ChunkyBorder.Shape waitForShape(ClientGameTestContext context, Predicate<ChunkyBorder.Shape> wanted, String what) {
+		return waitForShape(context, wanted, what, 1200);
+	}
+
+	private static ChunkyBorder.Shape waitForShape(ClientGameTestContext context, Predicate<ChunkyBorder.Shape> wanted, String what, int ticks) {
 		try {
 			context.waitFor(mc -> {
 				ChunkyBorder.Shape shape = ChunkyBorders.shape(mc.level);
 				return shape != null && wanted.test(shape);
-			}, 1200);
+			}, ticks);
 		} catch (AssertionError e) {
-			throw new AssertionError("The map never had " + what + " from Chunky Border; it has " + context.computeOnClient(mc -> describe(ChunkyBorders.shape(mc.level))), e);
+			throw new AssertionError("The map never had " + what + " from Chunky Border; it has " + context.computeOnClient(mc -> describe(ChunkyBorders.shape(mc.level)))
+				+ "; heard on the channel for " + context.computeOnClient(mc -> ChunkyBorders.heardForTests().keySet()) + " in " + context.computeOnClient(mc -> mc.level.dimension().identifier())
+				+ listening(context), e);
 		}
 		return context.computeOnClient(mc -> ChunkyBorders.shape(mc.level));
+	}
+
+	/** On NeoForge, whether the server agreed it sends on the channel, which its add-on asks before it sends. */
+	private static String listening(ClientGameTestContext context) {
+		//? if neoforge {
+		/*return "; the server " + (context.computeOnClient(mc -> mc.getConnection() != null && mc.getConnection().hasChannel(ChunkyBorders.CHANNEL)) ? "has" : "hasn't") + " the channel";
+		*///?} else {
+		return "";
+		//?}
 	}
 
 	private static String describe(ChunkyBorder.Shape shape) {

@@ -73,6 +73,10 @@ let players = [];
 // chunk (in the pictures' turned space) each owns, from claims.json. Null before the first answer.
 let claims = null;
 let claimsVersion = 0;
+// World borders, from border.json: each a line where its wall meets the ground, already in map
+// space (map units across and down), with its dimension and colour.
+let borders = [];
+let bordersText = "";
 
 function tileUnits(z) { return map.tileUnits * (1 << z); }
 
@@ -87,6 +91,7 @@ function load(first) {
 		if (!map.live) loadMarkers();
 		if (!map.live && map.players && !asking) startPlayers();
 		if (map.claims && !askingClaims) startClaims();
+		loadBorders();
 		if (!map.claims && claims) { claims = null; claimsTag = ""; claimsVersion++; overlays.clear(); hideClaim(); draw(); }
 		// Turned off since: gone now, not at the next answer.
 		if (!map.players && players.length) showPlayers([]);
@@ -133,6 +138,20 @@ function loadMarkers() {
 		const list = Array.isArray(json.markers) ? json.markers.filter(m => m && typeof m.name === "string" && typeof m.dimension === "string" && number(m.x) && number(m.y) && number(m.z)) : [];
 		if (JSON.stringify(list) === JSON.stringify(markers)) return;
 		markers = list;
+		draw();
+	}).catch(() => {});
+}
+
+// The borders, asked for as often as the map file. A map with no border has no such file.
+function loadBorders() {
+	fetch("border.json", { cache: "no-cache" }).then(r => r.ok ? r.text() : "").then(text => {
+		if (text === bordersText) return;
+		bordersText = text;
+		let json = null;
+		try { json = text ? JSON.parse(text) : null; } catch (e) { json = null; }
+		const point = n => typeof n === "number" && isFinite(n);
+		borders = json && Array.isArray(json.lines) ? json.lines.filter(l => l && typeof l.dimension === "string" && typeof l.color === "string" && /^#[0-9a-f]{6}$/i.test(l.color)
+			&& Array.isArray(l.points) && l.points.length >= 4 && l.points.length % 2 === 0 && l.points.every(point)) : [];
 		draw();
 	}).catch(() => {});
 }
@@ -686,10 +705,29 @@ function paint() {
 		trimClaims(z, sharp);
 	}
 	fillState = { wanted: sharp.length, loaded, any, claimsPending };
+	for (const b of borders) if (b.dimension === dim.id) drawBorder(b.points, b.color, left, top, k, dpr);
 	// A marker stands on its block: the map point of X, Y, Z, as the map file's sin and cos place it.
 	for (const m of markers) if (m.dimension === dim.id) drawMarker(sx(m.x + 0.5), sy((m.z + 0.5) * map.sin - m.y * map.cos), dpr, m.name);
 	for (const p of players) if (p.dimension === dim.id) drawPlayer(sx(p.u), sy(p.v), dpr, p, p.name);
 	if (player && player.dimension === dim.id) drawPlayer(sx(player.u), sy(player.v), dpr, player, null);
+}
+
+// A border: a line on the ground in the colour of its wall, over a dark rim, as the map in the game draws it.
+function drawBorder(p, color, left, top, k, dpr) {
+	ctx.save();
+	ctx.lineJoin = "round";
+	ctx.lineCap = "round";
+	ctx.beginPath();
+	ctx.moveTo((p[0] - left) * k, (p[1] - top) * k);
+	for (let i = 2; i < p.length; i += 2) ctx.lineTo((p[i] - left) * k, (p[i + 1] - top) * k);
+	const rgb = parseInt(color.slice(1), 16);
+	ctx.lineWidth = 5 * dpr;
+	ctx.strokeStyle = "rgb(" + [rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255].map(c => Math.floor(c * 3 / 10)).join(",") + ")";
+	ctx.stroke();
+	ctx.lineWidth = 3 * dpr;
+	ctx.strokeStyle = color;
+	ctx.stroke();
+	ctx.restore();
 }
 
 // A marker: a pin standing on its spot, with its name over it.

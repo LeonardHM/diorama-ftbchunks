@@ -1,13 +1,16 @@
 package dev.diorama.web;
 
 import com.sun.net.httpserver.HttpExchange;
+import dev.diorama.ChunkyBorders;
 import dev.diorama.Diorama;
 import dev.diorama.Facing;
 import dev.diorama.MapSession;
 import dev.diorama.Projection;
 import dev.diorama.ServerRules;
 import dev.diorama.Settings;
+import dev.diorama.WorldBorderOverlay;
 import dev.diorama.bake.TileKey;
+import dev.diorama.compat.ChunkyBorder;
 import dev.diorama.data.TileStore;
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,10 +21,12 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -65,8 +70,17 @@ public final class ClientWebMap {
 	}
 
 	/** The map being shown, as the client thread last saw it. */
-	private record Live(TileStore store, String dimension, String folder, double sin, double cos, Facing facing, String player) {
+	private record Live(TileStore store, String dimension, String folder, double sin, double cos, Facing facing, String player, String border) {
 	}
+
+	/** How often the border's line is made again while nothing else changed, for the ground loaded since. */
+	private static final long BORDER_MS = 5000;
+	/** Reads the ground under the border as the map in the game does. */
+	private static final WorldBorderOverlay GROUND = new WorldBorderOverlay();
+	private static String border = WebBorder.NONE;
+	private static ChunkyBorder.@Nullable Shape borderShape;
+	private static @Nullable String borderOf;
+	private static long borderAt;
 
 	/** The port the page is served on, or 0 when it isn't. */
 	public static int servingPort() {
@@ -215,7 +229,37 @@ public final class ClientWebMap {
 		// picture under its address, and the same tile of another world or another map of this
 		// dimension must not be taken for it.
 		String folder = dimension.replace(':', '_').replace('/', '_') + "-" + Integer.toHexString(store.folder().toAbsolutePath().normalize().toString().hashCode());
-		return new Live(store, dimension, folder, Projection.sin(), Projection.cos(), facing, player);
+		return new Live(store, dimension, folder, Projection.sin(), Projection.cos(), facing, player, border(mc.level, viewer, dimension, facing));
+	}
+
+	/**
+	 * The page's {@code border.json}: the dimension's Chunky Border as a line on the ground, made
+	 * again when the border, the dimension, the facing or the camera's angle changes, and every few
+	 * seconds for ground loaded since.
+	 */
+	private static String border(ClientLevel level, Entity viewer, String dimension, Facing facing) {
+		ChunkyBorder.Shape shape = ChunkyBorders.shape(level);
+		if (shape == null) {
+			borderShape = null;
+			border = WebBorder.NONE;
+			return border;
+		}
+		String of = dimension + " " + facing.turns + " " + Projection.sin() + " " + ChunkyBorders.color();
+		long now = System.currentTimeMillis();
+		if (shape.same(borderShape) && of.equals(borderOf) && now - borderAt < BORDER_MS) {
+			return border;
+		}
+		borderShape = shape;
+		borderOf = of;
+		borderAt = now;
+		// Under a roof there's no one ground to follow: level, at the player's height, as on the map in the game.
+		boolean roofed = level.dimensionType().hasCeiling();
+		float feet = (float) viewer.getY();
+		WebBorder.Ground ground = roofed ? (x, z) -> feet : (x, z) -> GROUND.groundAt(level, x, z);
+		double[] points = WebBorder.line(shape, facing, Projection.sin(), Projection.cos(), ground, roofed ? feet : level.getSeaLevel());
+		GROUND.forgetChunk();
+		border = WebBorder.json(List.of(new WebBorder.Line(dimension, ChunkyBorders.color(), points)));
+		return border;
 	}
 
 	private static String escape(String text) {
@@ -257,6 +301,8 @@ public final class ClientWebMap {
 				WebServer.send(exchange, 200, "application/json", head ? null : mapJson(now).getBytes(StandardCharsets.UTF_8));
 			} else if (path.equals("/player.json")) {
 				WebServer.send(exchange, 200, "application/json", head ? null : (now == null ? "{}" : now.player()).getBytes(StandardCharsets.UTF_8));
+			} else if (path.equals("/" + WebBorder.FILE)) {
+				WebServer.send(exchange, 200, "application/json", head ? null : (now == null ? WebBorder.NONE : now.border()).getBytes(StandardCharsets.UTF_8));
 			} else {
 				byte[] tile = now == null ? null : tile(now, path);
 				if (tile == null) {

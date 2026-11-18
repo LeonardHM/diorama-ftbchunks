@@ -136,7 +136,7 @@ final class WebMapMarkersTest {
 	}
 
 	/** Waits until a path's text has {@code part} in it, and returns the text. A test server can take half a minute to get to a console command while it saves. */
-	private static String waitForText(ClientGameTestContext context, HttpClient http, int port, String path, String part, int ticks) {
+	static String waitForText(ClientGameTestContext context, HttpClient http, int port, String path, String part, int ticks) {
 		String[] text = {""};
 		int[] asked = {0};
 		try {
@@ -164,7 +164,7 @@ final class WebMapMarkersTest {
 	}
 
 	/** Waits until the web map has finished a pass and lists pictures of the Overworld. */
-	private static void waitForPass(ClientGameTestContext context, HttpClient http, int port, RealServer server) {
+	static void waitForPass(ClientGameTestContext context, HttpClient http, int port, RealServer server) {
 		int[] asked = {0};
 		context.waitFor(mc -> {
 			if (asked[0]++ % 40 != 0) {
@@ -177,7 +177,7 @@ final class WebMapMarkersTest {
 		}, 20 * 60 * 10);
 	}
 
-	private static void write(Path file, String text) {
+	static void write(Path file, String text) {
 		try {
 			Files.createDirectories(file.getParent());
 			Files.writeString(file, text);
@@ -187,7 +187,7 @@ final class WebMapMarkersTest {
 	}
 
 	/** The HTTP status of a path, or -1 while nothing answers. */
-	private static int status(HttpClient http, int port, String path) {
+	static int status(HttpClient http, int port, String path) {
 		try {
 			return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path)).build(), HttpResponse.BodyHandlers.discarding()).statusCode();
 		} catch (IOException e) {
@@ -197,7 +197,7 @@ final class WebMapMarkersTest {
 		}
 	}
 
-	private static String get(HttpClient http, int port, String path) {
+	static String get(HttpClient http, int port, String path) {
 		try {
 			return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path)).build(), HttpResponse.BodyHandlers.ofString()).body();
 		} catch (IOException e) {
@@ -207,7 +207,7 @@ final class WebMapMarkersTest {
 		}
 	}
 
-	private static int freePort() {
+	static int freePort() {
 		try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
 			return socket.getLocalPort();
 		} catch (IOException e) {

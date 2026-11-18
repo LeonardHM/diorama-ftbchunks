@@ -137,6 +137,9 @@ public class DioramaClientTest implements FabricClientGameTest {
 			if (tests.contains("world-border")) {
 				WorldBorderTest.run(context, world);
 			}
+			if (tests.contains("chunky-border") && System.getenv("DIORAMA_REAL_SERVER") == null) {
+				ChunkyBorderTest.singleplayer(context, world);
+			}
 			if (tests.contains("waypoint-clutter")) {
 				WaypointClutterTest.photos(context, world);
 			}
@@ -485,6 +488,9 @@ public class DioramaClientTest implements FabricClientGameTest {
 		}
 		if (tests.contains("web-map-locks")) {
 			WebMapLocksTest.run(context);
+		}
+		if (tests.contains("chunky-border") && System.getenv("DIORAMA_REAL_SERVER") != null) {
+			ChunkyBorderTest.server(context);
 		}
 		if (tests.contains("shared-changes")) {
 			SharedChangesTest.run(context);

@@ -1,5 +1,6 @@
 package dev.diorama.forge;
 
+import dev.diorama.ChunkyBorders;
 import dev.diorama.Claims;
 import dev.diorama.Diorama;
 import dev.diorama.DioramaClient;
@@ -75,7 +76,10 @@ final class DioramaForgeClient {
 		});
 		modBus.addListener(EventPriority.NORMAL, false, RegisterClientReloadListenersEvent.class, event -> event.registerReloadListener(XaeroRadarIcons.LISTENER));
 		// Once every mod has loaded, so a mod that has Xaero's channels has them by then.
-		modBus.addListener(EventPriority.NORMAL, false, FMLLoadCompleteEvent.class, event -> event.enqueueWork(XaeroChannels::register));
+		modBus.addListener(EventPriority.NORMAL, false, FMLLoadCompleteEvent.class, event -> event.enqueueWork(() -> {
+			XaeroChannels.register();
+			ChunkyBorders.register();
+		}));
 
 		// Fired for the integrated server's chunks too, on its own thread.
 		MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, ChunkEvent.Load.class, event -> {
@@ -111,6 +115,7 @@ final class DioramaForgeClient {
 		DrawingStore.onLeave();
 		WorldKey.onJoinOrLeave();
 		XaeroChannels.onJoinOrLeave();
+		ChunkyBorders.clear();
 		ShareClient.onJoinOrLeave();
 		TrackedPlayers.clear();
 		Waystones.clear();

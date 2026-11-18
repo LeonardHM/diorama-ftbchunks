@@ -178,7 +178,7 @@ final class WorldBorderTest {
 	}
 
 	/** A view the size of a minimap around a place, at {@code zoom}. */
-	private static MapViewport.View around(int x, int y, int z, double zoom) {
+	static MapViewport.View around(int x, int y, int z, double zoom) {
 		return new MapViewport.View(0, 0, 200, 200, Projection.u(x, z), Projection.v(x, y, z), zoom, TileKey.SURFACE);
 	}
 
@@ -194,7 +194,7 @@ final class WorldBorderTest {
 	}
 
 	/** Opens the map on a place and takes its picture; the map stays open. */
-	private static BufferedImage map(ClientGameTestContext context, BlockPos at, double zoom, int layer, String name) {
+	static BufferedImage map(ClientGameTestContext context, BlockPos at, double zoom, int layer, String name) {
 		context.setScreen(MapScreen::new);
 		// Over the hint bar at the bottom, so no hover box covers the map.
 		context.getInput().setCursorPos(1500, 890);
@@ -204,7 +204,7 @@ final class WorldBorderTest {
 	}
 
 	/** How many pixels are the colour, give or take the last bit or two. */
-	private static int count(BufferedImage shot, int colour) {
+	static int count(BufferedImage shot, int colour) {
 		int found = 0;
 		for (int y = 0; y < shot.getHeight(); y++) {
 			for (int x = 0; x < shot.getWidth(); x++) {
@@ -217,7 +217,7 @@ final class WorldBorderTest {
 		return found;
 	}
 
-	private static BufferedImage read(Path file) {
+	static BufferedImage read(Path file) {
 		try {
 			return ImageIO.read(file.toFile());
 		} catch (IOException e) {

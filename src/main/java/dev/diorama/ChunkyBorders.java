@@ -47,6 +47,8 @@ public final class ChunkyBorders {
 
 	/** What Diorama heard on the channel itself, by dimension ID. Only without the add-on here. */
 	private static final Map<String, ChunkyBorder.Shape> HEARD = new ConcurrentHashMap<>();
+	/** Borders are kept for this many dimensions of a server; one that names more is making them up. */
+	private static final int MAX_DIMENSIONS = 256;
 
 	private static boolean looked;
 	private static @Nullable Method clientShape;
@@ -155,7 +157,7 @@ public final class ChunkyBorders {
 		}
 		if (message.shape() == null) {
 			HEARD.remove(message.dimension());
-		} else {
+		} else if (HEARD.size() < MAX_DIMENSIONS || HEARD.containsKey(message.dimension())) {
 			HEARD.put(message.dimension(), message.shape());
 		}
 	}

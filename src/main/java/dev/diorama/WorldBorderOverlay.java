@@ -244,7 +244,9 @@ public final class WorldBorderOverlay {
 		boolean firstFromStart = false;
 		boolean open = false;
 		double[] range = new double[2];
-		for (int i = 0; i < corners; i++) {
+		// All the sides in view share this many points a frame, however many corners the server sent.
+		int budget = MAX_SAMPLES * 4;
+		for (int i = 0; i < corners && budget > 2; i++) {
 			int j = (i + 1) % corners;
 			double ax = xs[i];
 			double az = zs[i];
@@ -273,7 +275,8 @@ public final class WorldBorderOverlay {
 			// The ground is read a little way inside the side, in the blocks the wall stands on.
 			double inX = area > 0 ? -dz / length : dz / length;
 			double inZ = area > 0 ? dx / length : -dx / length;
-			int samples = (int) Math.max(2, Math.min(MAX_SAMPLES, Math.ceil(length * (range[1] - range[0]) / step) + 1));
+			int samples = (int) Math.max(2, Math.min(Math.min(MAX_SAMPLES, budget), Math.ceil(length * (range[1] - range[0]) / step) + 1));
+			budget -= samples;
 			for (int k = open ? 1 : 0; k < samples; k++) {
 				double t = range[0] + (range[1] - range[0]) * k / (samples - 1);
 				double x = ax + dx * t;

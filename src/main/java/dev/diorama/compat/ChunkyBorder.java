@@ -65,7 +65,8 @@ public final class ChunkyBorder {
 			return null;
 		}
 		for (int i = 0; i < xs.length; i++) {
-			if (!Double.isFinite(xs[i]) || !Double.isFinite(zs[i])) {
+			// Finite, and no farther out than twice the world's edge.
+			if (!(Math.abs(xs[i]) <= 6.0E7) || !(Math.abs(zs[i]) <= 6.0E7)) {
 				return null;
 			}
 		}
@@ -110,8 +111,9 @@ public final class ChunkyBorder {
 			Shape shape = null;
 			if (kind == 1) {
 				int corners = in.readInt();
-				// Each corner is 16 bytes: a count past what's left is a broken message.
-				if (corners < 0 || corners > in.available() / 16) {
+				// Each corner is 16 bytes: a count past what's left is a broken message. The add-on's own
+				// shapes have ten corners at most; a server sending thousands isn't describing a border.
+				if (corners < 0 || corners > in.available() / 16 || corners > MAX_CURVE_CORNERS) {
 					return null;
 				}
 				double[] xs = new double[corners];

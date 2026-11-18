@@ -82,6 +82,8 @@ public final class Radar {
 
 	/** The dropped items of one square of ground. */
 	private static final class Pile {
+		long squareX;
+		long squareY;
 		float x;
 		float y;
 		int count;
@@ -295,7 +297,7 @@ public final class Radar {
 	 * The dropped items as themselves, or null where they're dots: on the fullscreen map unless the
 	 * radar style is dots, and on the minimap while the player list key (Tab) is held, as Xaero's
 	 * shows its icons. A pile would be one picture hiding the rest, so the items on one square of
-	 * ground, a picture wide, show once per kind, up to four kinds two by two around the pile's
+	 * ground, two pictures wide, show once per kind, up to four kinds two by two around the pile's
 	 * middle: a farm's hundreds of drops come to a few pictures, which is also what keeps this cheap.
 	 * The squares are the ground's, not the screen's, so piles don't regroup as the map scrolls.
 	 */
@@ -316,26 +318,39 @@ public final class Radar {
 			if (!(blip.entity() instanceof ItemEntity dropped)) {
 				continue;
 			}
+			ItemStack stack = dropped.getItem();
+			if (stack.isEmpty()) {
+				continue;
+			}
 			size = Math.max(8, blip.size() * ITEM_PICTURE);
-			// Where the item is on the whole map at this zoom, in screen pixels.
-			double px = view.centerU() * view.zoom() + blip.x() - (view.x() + view.width() / 2.0);
-			double py = view.centerV() * view.zoom() + blip.y() - (view.y() + view.height() / 2.0);
-			long square = (long) Math.floor(px / size) << 32 | (long) Math.floor(py / size) & 0xFFFFFFFFL;
-			piles.computeIfAbsent(square, key -> new Pile()).add(blip, dropped.getItem());
+			// Where the item is on the whole map at this zoom, in screen pixels, from where it is in the
+			// world: its place on screen is already rounded, and would change squares as the map moves.
+			double px = Projection.u(dropped.getX(), dropped.getZ()) * view.zoom();
+			double py = Projection.v(dropped.getX(), dropped.getY(), dropped.getZ()) * view.zoom();
+			// Two pictures wide and tall, which is all the room a pile's four take: no pile's pictures reach into the next square.
+			long squareX = (long) Math.floor(px / (size * 2));
+			long squareY = (long) Math.floor(py / (size * 2));
+			Pile pile = piles.computeIfAbsent(squareX << 32 | squareY & 0xFFFFFFFFL, key -> new Pile());
+			pile.squareX = squareX;
+			pile.squareY = squareY;
+			pile.add(blip, stack);
 		}
 		List<ItemPicture> pictures = new ArrayList<>();
 		int drawn = 0;
 		for (Pile pile : piles.values()) {
-			float cx = pile.x / pile.count;
-			float cy = pile.y / pile.count;
 			int kinds = pile.kinds.size();
+			int columns = Math.min(2, kinds);
+			int rows = (kinds + 1) / 2;
+			// Around the pile's middle, as far as its pictures stay inside its square.
+			float left = view.screenX(pile.squareX * size * 2 / view.zoom());
+			float top = view.screenY(pile.squareY * size * 2 / view.zoom());
+			float cx = Math.max(left + columns * size / 2, Math.min(left + size * 2 - columns * size / 2, pile.x / pile.count));
+			float cy = Math.max(top + rows * size / 2, Math.min(top + size * 2 - rows * size / 2, pile.y / pile.count));
 			if (drawn + kinds > MAX_ITEM_PICTURES) {
 				pictures.add(new ItemPicture(pile.kinds.get(0), null, cx, cy, pile.kinds.get(0).size()));
 				continue;
 			}
 			drawn += kinds;
-			int columns = Math.min(2, kinds);
-			int rows = (kinds + 1) / 2;
 			for (int i = 0; i < kinds; i++) {
 				Blip blip = pile.kinds.get(i);
 				// The last of three sits in the middle of its row.

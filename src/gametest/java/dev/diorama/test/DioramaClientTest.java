@@ -3514,12 +3514,18 @@ public class DioramaClientTest implements FabricClientGameTest {
 		// On the minimap they're dots, and themselves while the player list key is held.
 		context.getInput().setCursorPos(0, 0);
 		context.waitTicks(5);
-		context.takeScreenshot("radar-02e-minimap-item-dots");
+		int dots = itemDotInk(context, context.takeScreenshot("radar-02e-minimap-item-dots"));
 		net.minecraft.client.KeyMapping playerList = context.computeOnClient(mc -> mc.options.keyPlayerList);
 		context.getInput().holdKey(playerList);
 		context.waitTicks(5);
-		context.takeScreenshot("radar-02f-minimap-items-key-held");
+		int held = itemDotInk(context, context.takeScreenshot("radar-02f-minimap-items-key-held"));
 		context.getInput().releaseKey(playerList);
+		context.waitTicks(5);
+		int released = itemDotInk(context, context.takeScreenshot("radar-02g-minimap-items-key-released"));
+		if (dots < 8 || held > dots / 4 || released < dots * 3 / 4) {
+			throw new AssertionError("The minimap's dropped items should be aqua dots, gone for pictures while the player list key is held: it has "
+				+ dots + " aqua pixels before, " + held + " held and " + released + " after");
+		}
 
 		// A lineup of mobs, hostile in one row and the rest in another, babies at the ends: each
 		// shows its own face on the radar.
@@ -3613,6 +3619,31 @@ public class DioramaClientTest implements FabricClientGameTest {
 		world.getServer().runCommand("time set noon");
 		world.getServer().runCommand("kill @e[type=!player]");
 		context.waitTicks(10);
+	}
+
+	/** How many of the minimap's pixels are the dropped items' aqua. */
+	private static int itemDotInk(ClientGameTestContext context, java.nio.file.Path file) {
+		int[] at = context.computeOnClient(mc -> {
+			int[] shown = dev.diorama.MinimapHud.shown();
+			int scale = (int) mc.getWindow().getGuiScale();
+			return new int[] {shown[0] * scale, shown[1] * scale, shown[2] * scale};
+		});
+		java.awt.image.BufferedImage shot;
+		try {
+			shot = javax.imageio.ImageIO.read(file.toFile());
+		} catch (java.io.IOException e) {
+			throw new java.io.UncheckedIOException(e);
+		}
+		int aqua = 0;
+		for (int y = at[1]; y < at[1] + at[2]; y++) {
+			for (int x = at[0]; x < at[0] + at[2]; x++) {
+				int rgb = shot.getRGB(x, y);
+				if ((rgb >> 16 & 0xFF) <= 0x60 && (rgb >> 8 & 0xFF) >= 0xF8 && (rgb & 0xFF) >= 0xF8) {
+					aqua++;
+				}
+			}
+		}
+		return aqua;
 	}
 
 	private static boolean showsItem(MapScreen screen) {

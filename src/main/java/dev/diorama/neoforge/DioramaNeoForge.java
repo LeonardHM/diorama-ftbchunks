@@ -12,6 +12,7 @@ import dev.diorama.SettingsScreen;
 import dev.diorama.TrackedPlayers;
 import dev.diorama.WorldKey;
 import dev.diorama.XaeroChannels;
+import dev.diorama.ChunkyBorders;
 import dev.diorama.drawing.DrawingStore;
 import dev.diorama.bake.BlockLooks;
 import dev.diorama.render.XaeroRadarIcons;
@@ -111,6 +112,7 @@ public final class DioramaNeoForge {
 			DrawingStore.onLeave();
 			WorldKey.onJoinOrLeave();
 			XaeroChannels.onJoinOrLeave();
+			ChunkyBorders.clear();
 			ShareClient.onJoinOrLeave();
 			TrackedPlayers.clear();
 			Waystones.clear();
@@ -126,6 +128,7 @@ public final class DioramaNeoForge {
 			// Mods sync block ids from the server before this, which can number block states differently.
 			BlockLooks.invalidate();
 			XaeroChannels.onJoinOrLeave();
+			ChunkyBorders.clear();
 			ShareClient.onJoinOrLeave();
 			TrackedPlayers.clear();
 			Waystones.clear();
@@ -134,6 +137,7 @@ public final class DioramaNeoForge {
 		// Lowest: mod bus events run priority by priority across mods, so a mod that has Xaero's
 		// channels has them by then.
 		modBus.addListener(EventPriority.LOWEST, false, RegisterPayloadHandlersEvent.class, XaeroChannels::register);
+		modBus.addListener(EventPriority.LOWEST, false, RegisterPayloadHandlersEvent.class, ChunkyBorders::register);
 		// Radar icons from Xaero's Minimap's icon files, read again on every resource reload.
 		//? if >=1.21.4 {
 		modBus.addListener(net.neoforged.neoforge.client.event.AddClientReloadListenersEvent.class, event -> event.addListener(XaeroRadarIcons.ID, XaeroRadarIcons.LISTENER));

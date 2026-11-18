@@ -1,7 +1,7 @@
 """Run Diorama's client game tests on boat.dev VMs: software rendering, no GPU. See SKILL.md.
 
 usage: python boat_run.py <node[,node...]> --tests <sections|all> [--type default|large] [--env KEY=VALUE]...
-                           [--mods <list|folder|jar|url>[,...]] [--warm-minutes N] [--keep]
+                           [--mods <list|folder|jar|url>[,...]] [--server-mods <...>] [--warm-minutes N] [--keep]
 
 Each node gets its own VM, started at the same time from the newest warmed snapshot, or the VM an
 earlier run from this checkout left warm. The script sends this working tree (uncommitted changes
@@ -9,6 +9,8 @@ included), runs :<node>:runClientGameTest, copies the results to build/boat-runs
 and deletes the VM or leaves it warm for the next run. Exits non-zero if any node failed.
 
 --mods runs the tests with other mods' release jars installed (see SKILL.md, "Other mods in a run").
+--server-mods installs them on the real server only (DIORAMA_REAL_SERVER=1), for a server mod the
+player doesn't have.
 """
 import argparse
 import concurrent.futures
@@ -406,10 +408,10 @@ def mods_for(node, items):
     return jars, urls
 
 
-def send_mods(node, vm, mods, out):
-    """Leaves ~/mods.tgz on the VM for sandbox.sh: the jars, and urls.txt for the ones it downloads."""
+def send_mods(node, vm, mods, out, name='mods.tgz'):
+    """Leaves ~/mods.tgz (or ~/<name>) on the VM for sandbox.sh: the jars, and urls.txt for the ones it downloads."""
     jars, urls = mods
-    tgz = out / 'mods.tgz'
+    tgz = out / name
     with tarfile.open(tgz, 'w:gz') as tar:
         for jar in jars:
             tar.add(jar, arcname=jar.name)
@@ -417,11 +419,12 @@ def send_mods(node, vm, mods, out):
         info = tarfile.TarInfo('urls.txt')
         info.size = len(listing)
         tar.addfile(info, io.BytesIO(listing))
-    sent = boat_retry('scp', tgz.name, f'{vm}:/home/user/mods.tgz', cwd=out, timeout=600)
+    sent = boat_retry('scp', tgz.name, f'{vm}:/home/user/{name}', cwd=out, timeout=600)
     tgz.unlink()
     if sent.returncode:
         raise RuntimeError(f'boat scp of the mods failed: {tail(sent)}')
-    say(node, 'other mods: ' + ', '.join([j.name for j in jars] + [name for name, _ in urls]))
+    say(node, ('other mods on the real server only: ' if name != 'mods.tgz' else 'other mods: ')
+        + ', '.join([j.name for j in jars] + [file for file, _ in urls]))
 
 
 def wait_for_start_slot():
@@ -537,7 +540,7 @@ def push_tree(node, vm, repo, snapshot, reused, out):
     # Results of an earlier run on this VM could pass for this run's.
     # And the last run's mods would load in this one.
     paths = ['/home/user/src', '/home/user/result', '/home/user/result.tgz', '/home/user/overlay.tgz',
-             '/home/user/mods.tgz']
+             '/home/user/mods.tgz', '/home/user/server-mods.tgz']
     cleared = boat_retry('exec', vm, '--timeout', '120', '--', 'rm', '-rf', *paths)
     if cleared.returncode:
         raise RuntimeError(f'could not clear the VM: {tail(cleared)}')
@@ -594,6 +597,8 @@ def run_node(node, args, repo, snapshot, start):
         script = push_tree(node, vm, repo, snapshot, reused, out)
         if node in args.mods:
             send_mods(node, vm, args.mods[node], out)
+        if node in args.server_mods:
+            send_mods(node, vm, args.server_mods[node], out, 'server-mods.tgz')
         pushed = time.time() - start
         say(node, f'pushed after {pushed:.0f} s; running {args.tests}')
         # The tests get what's left after setup, less 2 min to pack the results and 10 to fetch
@@ -707,6 +712,9 @@ def main():
                         help="other mods' release jars to run with, comma-separated: a list in mods/ by name "
                              '(opac, minecolonies), a folder of jars, a jar or a URL; with DIORAMA_REAL_SERVER=1 on the '
                              'real server too. See SKILL.md')
+    parser.add_argument('--server-mods', default='',
+                        help="as --mods, but only on the real server (DIORAMA_REAL_SERVER=1), not in the game: "
+                             "a server mod the player doesn't have")
     parser.add_argument('--keep', action='store_true', help='stop the VM instead of deleting it, to look around after')
     parser.add_argument('--snapshot', help='saved snapshot to start from (default: the newest diorama-gametest-*)')
     parser.add_argument('--warm-minutes', type=int,
@@ -724,6 +732,10 @@ def main():
         sys.exit(f'no node versions/{", ".join(missing)}')
     items = [m for m in args.mods.split(',') if m]
     args.mods = {n: mods_for(n, items) for n in nodes} if items else {}
+    server_items = [m for m in args.server_mods.split(',') if m]
+    if server_items and not any(e.startswith('DIORAMA_REAL_SERVER=') for e in args.env):
+        sys.exit('--server-mods only goes to the real server: add --env DIORAMA_REAL_SERVER=1')
+    args.server_mods = {n: mods_for(n, server_items) for n in nodes} if server_items else {}
     if args.warm_minutes is None:
         args.warm_minutes = WARM_MINUTES if len(nodes) <= WARM_NODES else 0
     global CHECKOUT

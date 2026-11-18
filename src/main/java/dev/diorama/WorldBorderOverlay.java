@@ -1,6 +1,7 @@
 package dev.diorama;
 
 import dev.diorama.bake.TileKey;
+import dev.diorama.compat.ChunkyBorder;
 import dev.diorama.drawing.Drawing;
 import dev.diorama.drawing.DrawingOverlay;
 import dev.diorama.render.MapViewport;
@@ -36,6 +37,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>An unset border is 60 million blocks wide: nothing is read or drawn until one of its sides is
  * in the view.
+ *
+ * <p>Where a server set a Chunky Border ({@link ChunkyBorders}) in the dimension, that's the border
+ * players meet, and the add-on's client draws its wall in place of the game's: the map draws it
+ * instead too, whatever its shape, in the wall's colour. Every side of it follows the ground.
  */
 public final class WorldBorderOverlay {
 	/** How far past the view a line is still made, in GUI pixels: its width, so an end never shows. */
@@ -50,6 +55,13 @@ public final class WorldBorderOverlay {
 	/** The four sides, kept from frame to frame: north, south, west and east on the picture. */
 	private final Drawing[] sides = {new Drawing(), new Drawing(), new Drawing(), new Drawing()};
 	private final List<Drawing> shown = new ArrayList<>(4);
+	/** The lines a Chunky Border's outline is cut into where it leaves the view, kept from frame to frame. */
+	private final List<Drawing> pieces = new ArrayList<>();
+	private double[] pieceXs = new double[256];
+	private double[] pieceZs = new double[256];
+	private float[] pieceHeights = new float[256];
+	/** Which side of the outline each point is on: a point between two on its side at their height adds nothing. */
+	private int[] pieceSides = new int[256];
 	private float[] heights = new float[256];
 	private double[] points = new double[512];
 	private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -70,6 +82,10 @@ public final class WorldBorderOverlay {
 	/** The sides in the view, as lines in map space; empty when the border is out of sight. */
 	public List<Drawing> sides(MapViewport.View view, ClientLevel level, Entity viewer) {
 		this.shown.clear();
+		ChunkyBorder.Shape chunky = ChunkyBorders.shape(level);
+		if (chunky != null) {
+			return this.outline(view, level, viewer, chunky, 0xFF000000 | ChunkyBorders.color());
+		}
 		WorldBorder border = level.getWorldBorder();
 		Facing facing = Projection.facing();
 		// Turned space, where the map's u is x: the border is a rectangle there too.
@@ -187,6 +203,194 @@ public final class WorldBorderOverlay {
 		return this.shown;
 	}
 
+	/**
+	 * A border of any shape, as lines in map space: its outline where the view shows it, each point
+	 * on the ground just inside it. Cut into pieces where it leaves the view and comes back.
+	 */
+	private List<Drawing> outline(MapViewport.View view, ClientLevel level, Entity viewer, ChunkyBorder.Shape shape, int color) {
+		Facing facing = Projection.facing();
+		int corners = shape.corners();
+		double[] xs = new double[corners];
+		double[] zs = new double[corners];
+		double area = 0;
+		for (int i = 0; i < corners; i++) {
+			xs[i] = facing.x(shape.xs()[i], shape.zs()[i]);
+			zs[i] = facing.z(shape.xs()[i], shape.zs()[i]);
+		}
+		for (int i = 0; i < corners; i++) {
+			int j = (i + 1) % corners;
+			area += xs[i] * zs[j] - xs[j] * zs[i];
+		}
+		double margin = MARGIN / view.zoom();
+		double left = view.minU() - margin;
+		double right = view.minU() + view.width() / view.zoom() + margin;
+		double top = view.minV() - margin;
+		double bottom = view.minV() + view.height() / view.zoom() + margin;
+		// The rows of turned space the view can show ground from, whatever its height: between the
+		// world's floor and its ceiling.
+		double nearest = Projection.zAt(top, level.getMinY());
+		double farthest = Projection.zAt(bottom, level.getMaxY() + 1);
+
+		boolean flatGround = view.layer() != TileKey.SURFACE || level.dimensionType().hasCeiling();
+		double feet = viewer.getY();
+		float flat = (float) (view.layer() != TileKey.SURFACE ? Math.min(feet, view.layer()) : feet);
+		float fallback = flatGround ? flat : level.getSeaLevel();
+		double step = Math.max(1, SAMPLE / view.zoom());
+		this.chunkRead = false;
+
+		int count = 0;
+		int pieces = 0;
+		// Whether the first piece starts at the first corner: then a last piece that ends there runs on into it.
+		boolean firstFromStart = false;
+		boolean open = false;
+		double[] range = new double[2];
+		// All the sides in view share this many points a frame, however many corners the server sent.
+		int budget = MAX_SAMPLES * 4;
+		for (int i = 0; i < corners && budget > 2; i++) {
+			int j = (i + 1) % corners;
+			double ax = xs[i];
+			double az = zs[i];
+			double dx = xs[j] - ax;
+			double dz = zs[j] - az;
+			double length = Math.hypot(dx, dz);
+			// Where along this side it's in the view: in the view's columns, and in the rows of the world it can show.
+			range[0] = 0;
+			range[1] = 1;
+			if (length == 0 || !clip(range, ax, dx, left, right) || !clip(range, az, dz, nearest, farthest)) {
+				if (open) {
+					pieces = this.endPiece(count, pieces, color, facing, fallback);
+					count = 0;
+					open = false;
+				}
+				continue;
+			}
+			if (open && range[0] > 0) {
+				pieces = this.endPiece(count, pieces, color, facing, fallback);
+				count = 0;
+				open = false;
+			}
+			if (i == 0 && range[0] == 0) {
+				firstFromStart = true;
+			}
+			// The ground is read a little way inside the side, in the blocks the wall stands on.
+			double inX = area > 0 ? -dz / length : dz / length;
+			double inZ = area > 0 ? dx / length : -dx / length;
+			int samples = (int) Math.max(2, Math.min(Math.min(MAX_SAMPLES, budget), Math.ceil(length * (range[1] - range[0]) / step) + 1));
+			budget -= samples;
+			for (int k = open ? 1 : 0; k < samples; k++) {
+				double t = range[0] + (range[1] - range[0]) * k / (samples - 1);
+				double x = ax + dx * t;
+				double z = az + dz * t;
+				if (count == this.pieceXs.length) {
+					this.grow();
+				}
+				this.pieceXs[count] = x;
+				this.pieceZs[count] = z;
+				this.pieceSides[count] = i;
+				if (flatGround) {
+					this.pieceHeights[count] = flat;
+				} else {
+					int blockX = (int) Math.floor(x + inX * 0.5);
+					int blockZ = (int) Math.floor(z + inZ * 0.5);
+					this.pieceHeights[count] = this.ground(level, facing.worldBlockX(blockX, blockZ), facing.worldBlockZ(blockX, blockZ));
+				}
+				count++;
+			}
+			open = true;
+			if (range[1] < 1) {
+				pieces = this.endPiece(count, pieces, color, facing, fallback);
+				count = 0;
+				open = false;
+			}
+		}
+		if (open) {
+			int before = pieces;
+			pieces = this.endPiece(count, pieces, color, facing, fallback);
+			if (firstFromStart && before > 0 && pieces > before) {
+				// Round the first corner: the last piece and the first are one line.
+				Drawing first = this.pieces.get(0);
+				Drawing last = this.pieces.get(before);
+				double[] joined = Arrays.copyOf(last.points, last.points.length + first.points.length - 2);
+				System.arraycopy(first.points, 2, joined, last.points.length, first.points.length - 2);
+				first.points = joined;
+				this.shown.remove(last);
+			}
+		}
+		this.chunk = null;
+		return this.shown;
+	}
+
+	/**
+	 * Narrows {@code range} (a part of a side, from 0 to 1) to where {@code start + delta * t} is
+	 * between {@code low} and {@code high}; false if that's nowhere.
+	 */
+	private static boolean clip(double[] range, double start, double delta, double low, double high) {
+		if (delta == 0) {
+			return start >= low && start <= high;
+		}
+		double a = (low - start) / delta;
+		double b = (high - start) / delta;
+		range[0] = Math.max(range[0], Math.min(a, b));
+		range[1] = Math.min(range[1], Math.max(a, b));
+		return range[0] <= range[1];
+	}
+
+	private void grow() {
+		int size = this.pieceXs.length * 2;
+		this.pieceXs = Arrays.copyOf(this.pieceXs, size);
+		this.pieceZs = Arrays.copyOf(this.pieceZs, size);
+		this.pieceHeights = Arrays.copyOf(this.pieceHeights, size);
+		this.pieceSides = Arrays.copyOf(this.pieceSides, size);
+	}
+
+	/**
+	 * Makes the {@code count} points gathered into a line, the next piece, and returns how many
+	 * pieces there are now. Where the ground isn't known, the nearest height known along the piece
+	 * stands in, or {@code fallback}.
+	 */
+	private int endPiece(int count, int pieces, int color, Facing facing, float fallback) {
+		if (count < 2) {
+			return pieces;
+		}
+		float[] heights = this.pieceHeights;
+		int known = -1;
+		for (int i = 0; i < count; i++) {
+			if (Float.isNaN(heights[i])) {
+				heights[i] = known >= 0 ? heights[known] : Float.NaN;
+			} else {
+				if (known < 0) {
+					Arrays.fill(heights, 0, i, heights[i]);
+				}
+				known = i;
+			}
+		}
+		if (known < 0) {
+			Arrays.fill(heights, 0, count, fallback);
+		}
+		double[] points = new double[count * 2];
+		int kept = 0;
+		for (int i = 0; i < count; i++) {
+			// A point between two on its side at their height is on the line between them.
+			if (i > 0 && i < count - 1 && this.pieceSides[i - 1] == this.pieceSides[i] && this.pieceSides[i + 1] == this.pieceSides[i]
+				&& heights[i - 1] == heights[i] && heights[i + 1] == heights[i]) {
+				continue;
+			}
+			points[kept * 2] = this.pieceXs[i];
+			points[kept * 2 + 1] = Projection.v(heights[i], this.pieceZs[i]);
+			kept++;
+		}
+		if (this.pieces.size() == pieces) {
+			this.pieces.add(new Drawing());
+		}
+		Drawing line = this.pieces.get(pieces);
+		line.kind = Drawing.Kind.STROKE;
+		line.color = color;
+		line.points = Arrays.copyOf(points, kept * 2);
+		line.turns = facing.turns;
+		this.shown.add(line);
+		return pieces + 1;
+	}
+
 	private void show(int side, int color, double[] points, Facing facing) {
 		Drawing line = this.sides[side];
 		line.kind = Drawing.Kind.STROKE;
@@ -238,6 +442,17 @@ public final class WorldBorderOverlay {
 	private float groundOr(ClientLevel level, Facing facing, int blockX, int blockZ, float fallback) {
 		float height = this.ground(level, facing.worldBlockX(blockX, blockZ), facing.worldBlockZ(blockX, blockZ));
 		return Float.isNaN(height) ? fallback : height;
+	}
+
+	/** {@link #ground}, for the player's own web map's border. Client thread; {@link #forgetChunk} after. */
+	public float groundAt(ClientLevel level, int x, int z) {
+		return this.ground(level, x, z);
+	}
+
+	/** Lets go of the chunk {@link #groundAt} last read, and reads it again next time. */
+	public void forgetChunk() {
+		this.chunk = null;
+		this.chunkRead = false;
 	}
 
 	/**

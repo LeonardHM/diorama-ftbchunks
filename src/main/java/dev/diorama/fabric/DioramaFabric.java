@@ -1,5 +1,6 @@
 package dev.diorama.fabric;
 
+import dev.diorama.ChunkyBorders;
 import dev.diorama.Claims;
 import dev.diorama.Diorama;
 import dev.diorama.DioramaClient;
@@ -102,6 +103,7 @@ public final class DioramaFabric implements ClientModInitializer {
 			DrawingStore.onLeave();
 			WorldKey.onJoinOrLeave();
 			XaeroChannels.onJoinOrLeave();
+			ChunkyBorders.clear();
 			ShareClient.onJoinOrLeave();
 			TrackedPlayers.clear();
 			Waystones.clear();
@@ -115,13 +117,17 @@ public final class DioramaFabric implements ClientModInitializer {
 			DrawingStore.onLeave();
 			WorldKey.onJoinOrLeave();
 			XaeroChannels.onJoinOrLeave();
+			ChunkyBorders.clear();
 			ShareClient.onJoinOrLeave();
 			TrackedPlayers.clear();
 			Waystones.clear();
 			Claims.clear();
 		});
 		// Once every mod has started, so a mod that has Xaero's channels has them by then.
-		ClientLifecycleEvents.CLIENT_STARTED.register(mc -> XaeroChannels.register());
+		ClientLifecycleEvents.CLIENT_STARTED.register(mc -> {
+			XaeroChannels.register();
+			ChunkyBorders.register();
+		});
 		// Radar icons from Xaero's Minimap's icon files, read again on every resource reload.
 		//? if >=26.1 {
 		net.fabricmc.fabric.api.resource.v1.ResourceLoader.get(PackType.CLIENT_RESOURCES).registerReloadListener(XaeroRadarIcons.ID, XaeroRadarIcons.LISTENER);

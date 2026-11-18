@@ -10,6 +10,7 @@ import dev.diorama.bake.TileKey;
 import dev.diorama.bake.VanillaTable;
 import dev.diorama.data.ChunkSnapshot;
 import dev.diorama.data.ChunkTags;
+import dev.diorama.data.SavedChunk;
 import dev.diorama.data.SavedChunkSource;
 import dev.diorama.share.ServerLocks;
 import dev.diorama.share.ShareServer;
@@ -101,6 +102,8 @@ public final class WebMap {
 	private final @Nullable WebPlayers players;
 	/** The land claims on the page, or null when the settings keep them off it or no claims mod is installed. */
 	private final @Nullable WebClaims claims;
+	/** Chunky Border's borders on the page, or null when it isn't installed. */
+	private final WebBorder.@Nullable Server borders;
 	private volatile boolean stopping;
 	/** An operator asked to draw everything again; taken by the next pass. */
 	private final java.util.concurrent.atomic.AtomicBoolean redrawAll = new java.util.concurrent.atomic.AtomicBoolean();
@@ -122,6 +125,7 @@ public final class WebMap {
 		this.markers = new WebMarkers(server.getWorldPath(LevelResource.ROOT).resolve(WebMarkers.STORE), this.folder);
 		// Claims, like players, come only from the map's own web server.
 		this.claims = settings.claims() && settings.port() > 0 ? WebClaims.of(server, this::leftOut) : null;
+		this.borders = WebBorder.Server.wanted() ? new WebBorder.Server(server, this.folder) : null;
 		this.thread = new Thread(this::run, "Diorama web map");
 		this.thread.setDaemon(true);
 		this.thread.setPriority(Thread.MIN_PRIORITY);
@@ -179,6 +183,9 @@ public final class WebMap {
 			this.players.start();
 		}
 		WebClaims.deleteOldFile(this.folder);
+		if (this.borders == null) {
+			WebBorder.Server.deleteOld(this.folder);
+		}
 		if (this.claims != null) {
 			this.claims.start();
 		}
@@ -350,6 +357,7 @@ public final class WebMap {
 			// The page's markers, without those of a dimension turned off since they were placed.
 			this.markers.publish(this::leftOut);
 			this.writeMapJson();
+			this.updateBorders(true);
 			if (this.settings.port() > 0 && !this.stopping) {
 				this.http = WebServer.start(this.folder, this.settings.address(), this.settings.port(), this.closed::contains, this.players == null ? null : this.players::json,
 						this.claims == null ? null : this.claims::answer, this.markers::published);
@@ -424,6 +432,8 @@ public final class WebMap {
 					this.redrawOwed = true;
 				}
 				this.writeMapJson();
+				// The ground along a border may have been saved since.
+				this.updateBorders(true);
 				this.passes++;
 				this.status = "up to date; draws what was saved since at most every " + PASS_GAP_MS / 60_000 + " minutes";
 				this.waitForChanges(progress, passStarted + PASS_GAP_MS);
@@ -442,6 +452,10 @@ public final class WebMap {
 	private void waitForChanges(Properties progress, long notBefore) {
 		while (!this.stopping && !this.redrawAll.get()) {
 			long wait = Math.max(CHECK_MS, notBefore - System.currentTimeMillis());
+			if (this.borders != null) {
+				// A border set or changed shows on the page within seconds, not at the next pass.
+				wait = WebBorder.Server.EVERY_MS;
+			}
 			synchronized (this.wake) {
 				try {
 					this.wake.wait(wait);
@@ -449,7 +463,8 @@ public final class WebMap {
 					return;
 				}
 			}
-			if (this.stopping || this.redrawAll.get() || System.currentTimeMillis() < notBefore) {
+			this.updateBorders(false);
+			if (this.stopping || this.redrawAll.get() || System.currentTimeMillis() < notBefore || !this.checkDue()) {
 				continue;
 			}
 			if (this.redrawOwed) {
@@ -488,6 +503,30 @@ public final class WebMap {
 			}
 		}
 		//?}
+	}
+
+	/** When the region files were last looked at between passes. */
+	private long checked;
+
+	/** Whether it's time to look at the region files again: every {@link #CHECK_MS}. */
+	private boolean checkDue() {
+		long now = System.currentTimeMillis();
+		if (now - this.checked < CHECK_MS) {
+			return false;
+		}
+		this.checked = now;
+		return true;
+	}
+
+	/**
+	 * Writes the page's borders again if the add-on's changed, or whatever they are with
+	 * {@code always}, as the ground under them may have changed. Web map thread.
+	 */
+	void updateBorders(boolean always) {
+		WebBorder.Server borders = this.borders;
+		if (borders != null && (borders.changed(List.copyOf(this.dimensions.keySet())) || always)) {
+			borders.write(this.dimensions, Projection.facing(), Projection.sin(), Projection.cos());
+		}
 	}
 
 	boolean serverBehind() {
@@ -673,6 +712,20 @@ public final class WebMap {
 			}
 		}
 
+		ServerLevel level() {
+			return this.level;
+		}
+
+		/** The chunk as the save has it, or null. Web map thread. */
+		@Nullable SavedChunk savedChunk(int chunkX, int chunkZ) {
+			return this.save.read(chunkX, chunkZ);
+		}
+
+		/** Lets go of the chunks the save kept from {@link #savedChunk}. */
+		void forgetSavedChunks() {
+			this.save.clear();
+		}
+
 		/** A chunk as last drawn: its {@link ServerSave.Info#blocks}, highest block and floor. */
 		private record Drawn(int blocks, int top, int floor) {
 		}
@@ -755,6 +808,9 @@ public final class WebMap {
 					any = true;
 					int chunkX = regionX * 32 + (i & 31);
 					int chunkZ = regionZ * 32 + (i >> 5);
+					if (this.map.borders != null) {
+						this.map.borders.forget(this.id, chunkX, chunkZ);
+					}
 					boolean wasShown = last >= 0 && (this.map.settings.everyChunk() || this.shows(chunkX, chunkZ));
 					this.forget(chunkX, chunkZ);
 					changed++;
@@ -862,6 +918,8 @@ public final class WebMap {
 				tickMax = Math.max(tickMax, tick);
 				if ((drawn + empty) % 50 == 0) {
 					this.map.writeMapJson();
+					// A border set while a long pass draws shows before it ends.
+					this.map.updateBorders(false);
 				}
 			}
 			long overviewBytes = this.zoomOut(dirty);

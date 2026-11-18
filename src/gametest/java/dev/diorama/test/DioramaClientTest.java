@@ -3467,7 +3467,71 @@ public class DioramaClientTest implements FabricClientGameTest {
 			}
 			Settings.get().radarItems = true;
 		});
+		// A pile, six items of three kinds on one spot: the map shows it as one picture per kind. The
+		// lone diamond beside it is its own picture, found under the cursor where it's drawn.
+		for (String item : new String[] {"diamond", "gold_ingot", "gold_ingot", "gold_ingot", "emerald", "emerald"}) {
+			world.getServer().runCommand("summon item " + (x - 6) + " " + y + " " + (z + 2) + " {Item:{id:\"minecraft:" + item + "\",count:1,Count:1b},Age:-32768s,PickupDelay:32767s}");
+		}
+		context.waitTicks(10);
+		context.getInput().setCursorPos(0, 0);
+		context.waitTicks(3);
+		context.takeScreenshot("radar-02c-item-pile");
+		float[] lone = context.computeOnClient(mc -> {
+			MapScreen screen = (MapScreen) mc.gui.screen();
+			List<Radar.ItemPicture> pictures = Radar.itemPictures(screen.view(), screen.blips(), true);
+			List<String> pile = new java.util.ArrayList<>();
+			Radar.ItemPicture alone = null;
+			for (Radar.ItemPicture picture : pictures == null ? List.<Radar.ItemPicture>of() : pictures) {
+				String item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(picture.stack().getItem()).getPath();
+				// Only the items summoned here: the world has its own drops.
+				net.minecraft.world.entity.Entity dropped = picture.blip().entity();
+				if (Math.abs(dropped.getX() - (x - 6)) < 0.6 && Math.abs(dropped.getZ() - (z + 2)) < 0.6) {
+					pile.add(item);
+				} else if (item.equals("diamond")) {
+					alone = picture;
+				}
+			}
+			java.util.Collections.sort(pile);
+			// A flower the clearing dropped can lie on the same spot: each kind once, the three summoned among them.
+			if (alone == null || !pile.containsAll(List.of("diamond", "emerald", "gold_ingot")) || new java.util.HashSet<>(pile).size() != pile.size()) {
+				throw new AssertionError("The map should draw the lone diamond and one picture per kind in the pile; the pile has " + pile + (alone == null ? ", and the diamond is missing" : ""));
+			}
+			float scale = (float) mc.getWindow().getGuiScale();
+			return new float[] {(alone.x() + alone.size() / 2) * scale, (alone.y() + alone.size() / 2) * scale};
+		});
+		context.getInput().setCursorPos(lone[0], lone[1]);
+		context.waitTicks(10);
+		context.takeScreenshot("radar-02d-item-hovered");
+		context.runOnClient(mc -> {
+			MapScreen screen = (MapScreen) mc.gui.screen();
+			Radar.Blip hovered = Radar.under(screen.view(), screen.blips(), lone[0] / mc.getWindow().getGuiScale(), lone[1] / mc.getWindow().getGuiScale());
+			if (hovered == null || !(hovered.entity() instanceof net.minecraft.world.entity.item.ItemEntity dropped) || !dropped.getItem().is(net.minecraft.world.item.Items.DIAMOND)) {
+				throw new AssertionError("Under the cursor on the diamond's picture the map finds " + (hovered == null ? "nothing" : hovered.entity()));
+			}
+			// With the radar as dots they're dots.
+			Settings.RadarStyle style = Settings.get().radarStyle;
+			Settings.get().radarStyle = Settings.RadarStyle.DOTS;
+			if (Radar.itemPictures(screen.view(), screen.blips(), true) != null) {
+				throw new AssertionError("Dropped items are drawn as themselves with the radar style set to dots");
+			}
+			Settings.get().radarStyle = style;
+		});
 		context.setScreen(() -> null);
+		// On the minimap they're dots, and themselves while the player list key is held.
+		context.getInput().setCursorPos(0, 0);
+		context.waitTicks(5);
+		int dots = itemDotInk(context, context.takeScreenshot("radar-02e-minimap-item-dots"));
+		net.minecraft.client.KeyMapping playerList = context.computeOnClient(mc -> mc.options.keyPlayerList);
+		context.getInput().holdKey(playerList);
+		context.waitTicks(5);
+		int held = itemDotInk(context, context.takeScreenshot("radar-02f-minimap-items-key-held"));
+		context.getInput().releaseKey(playerList);
+		context.waitTicks(5);
+		int released = itemDotInk(context, context.takeScreenshot("radar-02g-minimap-items-key-released"));
+		if (dots < 8 || held > dots / 4 || released < dots * 3 / 4) {
+			throw new AssertionError("The minimap's dropped items should be aqua dots, gone for pictures while the player list key is held: it has "
+				+ dots + " aqua pixels before, " + held + " held and " + released + " after");
+		}
 
 		// A lineup of mobs, hostile in one row and the rest in another, babies at the ends: each
 		// shows its own face on the radar.
@@ -3561,6 +3625,31 @@ public class DioramaClientTest implements FabricClientGameTest {
 		world.getServer().runCommand("time set noon");
 		world.getServer().runCommand("kill @e[type=!player]");
 		context.waitTicks(10);
+	}
+
+	/** How many of the minimap's pixels are the dropped items' aqua. */
+	private static int itemDotInk(ClientGameTestContext context, java.nio.file.Path file) {
+		int[] at = context.computeOnClient(mc -> {
+			int[] shown = dev.diorama.MinimapHud.shown();
+			int scale = (int) mc.getWindow().getGuiScale();
+			return new int[] {shown[0] * scale, shown[1] * scale, shown[2] * scale};
+		});
+		java.awt.image.BufferedImage shot;
+		try {
+			shot = javax.imageio.ImageIO.read(file.toFile());
+		} catch (java.io.IOException e) {
+			throw new java.io.UncheckedIOException(e);
+		}
+		int aqua = 0;
+		for (int y = at[1]; y < at[1] + at[2]; y++) {
+			for (int x = at[0]; x < at[0] + at[2]; x++) {
+				int rgb = shot.getRGB(x, y);
+				if ((rgb >> 16 & 0xFF) <= 0x60 && (rgb >> 8 & 0xFF) >= 0xF8 && (rgb & 0xFF) >= 0xF8) {
+					aqua++;
+				}
+			}
+		}
+		return aqua;
 	}
 
 	private static boolean showsItem(MapScreen screen) {

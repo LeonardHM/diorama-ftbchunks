@@ -240,6 +240,13 @@ public final class IconBatch {
 		this.lastTexture = -1;
 	}
 
+	/** An item as {@link #item} places it, drawn now: under everything a batch holds. */
+	public void itemUnder(ItemStack stack, float x, float y, float scale) {
+		if (!this.measuring) {
+			this.drawItem(stack, x, y, scale);
+		}
+	}
+
 	private void drawItem(ItemStack stack, float x, float y, float scale) {
 		GuiGraphicsExtractor graphics = this.graphics;
 		graphics.pose().pushMatrix();

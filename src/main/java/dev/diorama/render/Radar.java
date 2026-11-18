@@ -8,7 +8,9 @@ import dev.diorama.Settings;
 import dev.diorama.TrackedPlayers;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -21,6 +23,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
@@ -31,7 +35,8 @@ import org.jspecify.annotations.Nullable;
  * dot of that colour when they have no face icon. Xaero's Minimap's icon files can give a mob an
  * image, an item or a dot instead (see {@link XaeroRadarIcons}), and Pokémon show as their own
  * pictures, a shiny one with a sparkle. Dropped items are small dots under
- * everything else. Anything well above or below you fades a little, and all but dropped items get a
+ * everything else, or the items themselves where there's room to tell them apart (see
+ * {@link #itemPictures}). Anything well above or below you fades a little, and all but dropped items get a
  * caret, since the map is a top view and can't otherwise show height; the caret is a setting.
  * Whether something shows, how big, and with its name under it is up to its category (see
  * {@link RadarCategories}).
@@ -39,6 +44,12 @@ import org.jspecify.annotations.Nullable;
 public final class Radar {
 	/** Vertical distance, in blocks, past which a caret shows. */
 	private static final double CARET_HEIGHT = 3;
+	/** A dropped item's picture is this many times its dot: 8 pixels on the minimap, 8 to 16 on the map. */
+	private static final float ITEM_PICTURE = 4;
+	/** The most item pictures in one view, fewer than an open double chest draws; piles past it stay dots. */
+	private static final int MAX_ITEM_PICTURES = 64;
+	/** A pile shows this many kinds of item, two by two. */
+	private static final int PILE_KINDS = 4;
 
 	/** In drawing order, which is also the order they lose to each other under the cursor. */
 	public enum Kind {
@@ -60,6 +71,47 @@ public final class Radar {
 	 * {@code named} whether its category puts its name under it in this view.
 	 */
 	public record Blip(Entity entity, Kind kind, float x, float y, double dy, float size, boolean named) {
+	}
+
+	/**
+	 * A dropped item drawn as itself: its square's corner and side, and one of the dropped items it
+	 * stands for. Without a stack it's a pile left as a dot, centred there.
+	 */
+	public record ItemPicture(Blip blip, @Nullable ItemStack stack, float x, float y, float size) {
+	}
+
+	/** The dropped items of one square of ground. */
+	private static final class Pile {
+		long squareX;
+		long squareY;
+		float x;
+		float y;
+		int count;
+		final List<Blip> kinds = new ArrayList<>(PILE_KINDS);
+
+		void add(Blip blip, ItemStack stack) {
+			this.x += blip.x();
+			this.y += blip.y();
+			this.count++;
+			Item item = stack.getItem();
+			for (int i = 0; i < this.kinds.size(); i++) {
+				Item other = ((ItemEntity) this.kinds.get(i).entity()).getItem().getItem();
+				if (other == item) {
+					return;
+				}
+				// In the items' own order, so a pile looks the same from frame to frame.
+				if (Item.getId(item) < Item.getId(other)) {
+					this.kinds.add(i, blip);
+					if (this.kinds.size() > PILE_KINDS) {
+						this.kinds.remove(PILE_KINDS);
+					}
+					return;
+				}
+			}
+			if (this.kinds.size() < PILE_KINDS) {
+				this.kinds.add(blip);
+			}
+		}
 	}
 
 	private Radar() {
@@ -165,7 +217,12 @@ public final class Radar {
 		float text = fullscreen ? 1 : TextSize.scale(settings.minimapTextSize);
 		IconBatch measure = circle == null ? null : IconBatch.measuring(graphics);
 		if (!players) {
-			itemDots(icons, blips, circle);
+			List<ItemPicture> pictures = itemPictures(view, blips, fullscreen);
+			if (pictures == null) {
+				itemDots(icons, blips, circle);
+			} else {
+				itemPictures(icons, pictures, circle);
+			}
 		}
 		for (Blip blip : blips) {
 			if (blip.kind() == Kind.ITEM || (blip.kind() == Kind.PLAYER) != players) {
@@ -230,6 +287,108 @@ public final class Radar {
 					icons.fill(x0 - 1, y0 - 1, x0 + d + 1, y0 + d + 1, withAlpha(0xFF000000, alpha));
 				} else {
 					icons.fill(x0, y0, x0 + d, y0 + d, withAlpha(blip.kind().color, alpha));
+				}
+			}
+		}
+		icons.endIcon();
+	}
+
+	/**
+	 * The dropped items as themselves, or null where they're dots: on the fullscreen map unless the
+	 * radar style is dots, and on the minimap while the player list key (Tab) is held, as Xaero's
+	 * shows its icons. A pile would be one picture hiding the rest, so the items on one square of
+	 * ground, two pictures wide, show once per kind, up to four kinds two by two around the pile's
+	 * middle: a farm's hundreds of drops come to a few pictures, which is also what keeps this cheap.
+	 * The squares are the ground's, not the screen's, so piles don't regroup as the map scrolls.
+	 */
+	public static @Nullable List<ItemPicture> itemPictures(MapViewport.View view, List<Blip> blips, boolean fullscreen) {
+		if (blips.isEmpty() || blips.get(0).kind() != Kind.ITEM) {
+			return null;
+		}
+		if (fullscreen ? Settings.get().radarStyle == Settings.RadarStyle.DOTS : !Minecraft.getInstance().options.keyPlayerList.isDown()) {
+			return null;
+		}
+		Map<Long, Pile> piles = new LinkedHashMap<>();
+		float size = 0;
+		for (Blip blip : blips) {
+			// They sort first.
+			if (blip.kind() != Kind.ITEM) {
+				break;
+			}
+			if (!(blip.entity() instanceof ItemEntity dropped)) {
+				continue;
+			}
+			ItemStack stack = dropped.getItem();
+			if (stack.isEmpty()) {
+				continue;
+			}
+			size = Math.max(8, blip.size() * ITEM_PICTURE);
+			// Where the item is on the whole map at this zoom, in screen pixels, from where it is in the
+			// world: its place on screen is already rounded, and would change squares as the map moves.
+			double px = Projection.u(dropped.getX(), dropped.getZ()) * view.zoom();
+			double py = Projection.v(dropped.getX(), dropped.getY(), dropped.getZ()) * view.zoom();
+			// Two pictures wide and tall, which is all the room a pile's four take: no pile's pictures reach into the next square.
+			long squareX = (long) Math.floor(px / (size * 2));
+			long squareY = (long) Math.floor(py / (size * 2));
+			Pile pile = piles.computeIfAbsent(squareX << 32 | squareY & 0xFFFFFFFFL, key -> new Pile());
+			pile.squareX = squareX;
+			pile.squareY = squareY;
+			pile.add(blip, stack);
+		}
+		List<ItemPicture> pictures = new ArrayList<>();
+		int drawn = 0;
+		for (Pile pile : piles.values()) {
+			int kinds = pile.kinds.size();
+			int columns = Math.min(2, kinds);
+			int rows = (kinds + 1) / 2;
+			// Around the pile's middle, as far as its pictures stay inside its square.
+			// In doubles: far from the world's middle a float can't tell one square from the next.
+			float left = view.screenX(pile.squareX * (size * 2.0) / view.zoom());
+			float top = view.screenY(pile.squareY * (size * 2.0) / view.zoom());
+			float cx = Math.max(left + columns * size / 2, Math.min(left + size * 2 - columns * size / 2, pile.x / pile.count));
+			float cy = Math.max(top + rows * size / 2, Math.min(top + size * 2 - rows * size / 2, pile.y / pile.count));
+			if (drawn + kinds > MAX_ITEM_PICTURES) {
+				pictures.add(new ItemPicture(pile.kinds.get(0), null, cx, cy, pile.kinds.get(0).size()));
+				continue;
+			}
+			drawn += kinds;
+			for (int i = 0; i < kinds; i++) {
+				Blip blip = pile.kinds.get(i);
+				// The last of three sits in the middle of its row.
+				int inRow = i / 2 == rows - 1 ? kinds - 2 * (rows - 1) : columns;
+				float x = cx + (i % 2 - inRow / 2.0F) * size;
+				float y = cy + (i / 2 - rows / 2.0F) * size;
+				pictures.add(new ItemPicture(blip, ((ItemEntity) blip.entity()).getItem(), x, y, size));
+			}
+		}
+		return pictures;
+	}
+
+	/** Draws {@link #itemPictures}, under the icons the batch holds. */
+	private static void itemPictures(IconBatch icons, List<ItemPicture> pictures, @Nullable Circle circle) {
+		for (int pass = 0; pass < 2; pass++) {
+			for (ItemPicture picture : pictures) {
+				if (picture.stack() != null) {
+					float x = picture.x();
+					float y = picture.y();
+					float s = picture.size();
+					if (pass == 0 && (circle == null || circle.contains(x, y) && circle.contains(x + s, y) && circle.contains(x, y + s) && circle.contains(x + s, y + s))) {
+						icons.itemUnder(picture.stack(), x, y, s / 16);
+					}
+					continue;
+				}
+				int alpha = alphaFor(picture.blip().dy());
+				int d = Math.max(1, Math.round(picture.size()));
+				float x0 = picture.x() - d / 2.0F;
+				float y0 = picture.y() - d / 2.0F;
+				if (circle != null && !(circle.contains(x0 - 1, y0 - 1) && circle.contains(x0 + d + 1, y0 - 1)
+					&& circle.contains(x0 - 1, y0 + d + 1) && circle.contains(x0 + d + 1, y0 + d + 1))) {
+					continue;
+				}
+				if (pass == 0) {
+					icons.fill(x0 - 1, y0 - 1, x0 + d + 1, y0 + d + 1, withAlpha(0xFF000000, alpha));
+				} else {
+					icons.fill(x0, y0, x0 + d, y0 + d, withAlpha(Kind.ITEM.color, alpha));
 				}
 			}
 		}
@@ -441,11 +600,18 @@ public final class Radar {
 		graphics.pose().popMatrix();
 	}
 
-	/** The blip under the cursor, if any, preferring players and then the nearest. */
-	public static @Nullable Blip under(List<Blip> blips, double mouseX, double mouseY) {
+	/**
+	 * The blip under the cursor on the fullscreen map, if any, preferring players and then the nearest.
+	 * Dropped items drawn as themselves are found where their pictures are, each standing for an item of its kind.
+	 */
+	public static @Nullable Blip under(MapViewport.View view, List<Blip> blips, double mouseX, double mouseY) {
+		List<ItemPicture> pictures = itemPictures(view, blips, true);
 		Blip best = null;
 		double bestDistance = Double.MAX_VALUE;
 		for (Blip blip : blips) {
+			if (pictures != null && blip.kind() == Kind.ITEM) {
+				continue;
+			}
 			double dx = blip.x() - mouseX;
 			double dy = blip.y() - mouseY;
 			double d = Math.sqrt(dx * dx + dy * dy);
@@ -460,6 +626,18 @@ public final class Radar {
 			if (better) {
 				best = blip;
 				bestDistance = d;
+			}
+		}
+		if (best == null && pictures != null) {
+			// The last drawn is on top.
+			for (ItemPicture picture : pictures) {
+				float half = picture.stack() == null ? picture.size() / 2 + 3 : 0;
+				float x0 = picture.x() - half;
+				float y0 = picture.y() - half;
+				float side = picture.stack() == null ? half * 2 : picture.size();
+				if (mouseX >= x0 && mouseY >= y0 && mouseX < x0 + side && mouseY < y0 + side) {
+					best = picture.blip();
+				}
 			}
 		}
 		return best;

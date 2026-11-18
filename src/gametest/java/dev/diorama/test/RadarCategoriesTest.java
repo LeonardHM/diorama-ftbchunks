@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.EntityType;
 
@@ -138,6 +139,20 @@ final class RadarCategoriesTest {
 		context.waitTicks(5);
 		context.takeScreenshot("radar-categories-08b-round-minimap");
 		context.runOnClient(mc -> Settings.get().minimapShape = Settings.Shape.SQUARE);
+		// Held, the player list key names the husk too, whose category has names off.
+		context.waitTicks(5);
+		int set = nameInk(context, context.takeScreenshot("radar-categories-08c-minimap-names-as-set"));
+		KeyMapping playerList = context.computeOnClient(mc -> mc.options.keyPlayerList);
+		context.getInput().holdKey(playerList);
+		context.waitTicks(5);
+		int held = nameInk(context, context.takeScreenshot("radar-categories-08d-minimap-names-key-held"));
+		context.getInput().releaseKey(playerList);
+		context.waitTicks(5);
+		int released = nameInk(context, context.takeScreenshot("radar-categories-08e-minimap-names-key-released"));
+		if (held < set + 20 || Math.abs(released - set) > 10) {
+			throw new AssertionError("Holding the player list key should name every mob on the minimap, and only while held: the names have "
+				+ set + " white pixels before, " + held + " held and " + released + " after");
+		}
 		context.setScreen(MapScreen::new);
 		context.runOnClient(mc -> {
 			if (mc.gui.screen() instanceof MapScreen screen) {

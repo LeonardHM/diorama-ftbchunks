@@ -1,12 +1,12 @@
 # Custom radar icons
 
-Diorama's radar shows each mob as its face, cut from the mob's own texture, so texture packs change the faces too. For most vanilla mobs Diorama knows where the face sits on the texture. For every other mob, modded ones included, it tries to read the face off the mob's 3D model, and if that doesn't work the mob shows up as a coloured dot.
+Diorama's radar shows each mob as its face, cut from the mob's own texture, so texture packs change the faces too. For most vanilla mobs Diorama knows where the face sits on the texture. For every other mob, modded ones included, it tries to read the face off the mob's 3D model. A mob with no head to read, like a fish or a squid, shows its whole body instead, from the front or the side. If none of that works, the mob shows up as a coloured dot.
 
 You can pick the icon yourself: your own picture, an item, or a dot. It takes a resource pack with one small file per mob, plus a picture if you draw one. No code.
 
 ![A wolf, a glow squid and a bat on the minimap, before and after the example pack](images/radar-icons-before-after.png)
 
-On the left, the minimap without any pack: a wolf's face at the top right, a glow squid as a dot, and a bat's face below the player. On the right, the same spot with the [example pack](#try-the-example-pack) turned on.
+On the left, the minimap without any pack: a wolf's face at the top right, a glow squid's body at the top left, and a bat's face below the player. On the right, the same spot with the [example pack](#try-the-example-pack) turned on.
 
 Diorama reads the icon files Xaero's Minimap uses, so any icon you make here works in Xaero's Minimap too, and icons that mods and packs already ship for Xaero's show up in Diorama without any work. You don't need Xaero's Minimap installed.
 

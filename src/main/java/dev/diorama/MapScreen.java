@@ -174,7 +174,11 @@ public final class MapScreen extends Screen {
 	/** That map while it's open. It's closed with the screen, and with each screen opened over this one. */
 	private @Nullable OtherMap otherMap;
 	private Button facingButton;
-	/** The Turn map key is down since a press that turned the map. */
+	/**
+	 * The Turn map key is down since a press that turned the map. Kept while another screen is over this
+	 * one, so a key still held on coming back doesn't turn the map again; let go over there, its next
+	 * press here is taken for the held one and does nothing.
+	 */
 	private boolean turnKeyHeld;
 
 	/** A dimension's saved map, and what it was opened for: a change to either opens it again. */
@@ -217,7 +221,6 @@ public final class MapScreen extends Screen {
 		this.gauge.cancel();
 		this.pressButton = -1;
 		this.pressOnMenu = false;
-		this.turnKeyHeld = false;
 		this.pressOnControl = false;
 		Settings settings = Settings.get();
 		this.dimensionButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> this.nextDimension())

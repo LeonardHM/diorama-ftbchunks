@@ -3519,6 +3519,7 @@ public class DioramaClientTest implements FabricClientGameTest {
 		settle(context, 20);
 		context.takeScreenshot("radar-05-faces-others");
 		context.setScreen(() -> null);
+		seaCreatures(context, world, x, y, z);
 
 		world.getServer().runCommand("tellraw @a \"§f§a§i§r§x§a§e§r§o\"");
 		context.waitTicks(20);
@@ -3555,6 +3556,118 @@ public class DioramaClientTest implements FabricClientGameTest {
 		world.getServer().runCommand("time set noon");
 		world.getServer().runCommand("kill @e[type=!player]");
 		context.waitTicks(10);
+	}
+
+	/**
+	 * Sea creatures in a pool around the player, each with a picture on the radar: most have no
+	 * head in their model, so their icon is the whole mob, as Xaero's Minimap draws them.
+	 * Screenshots of the minimap and the map in the heads and framed styles.
+	 */
+	private static void seaCreatures(ClientGameTestContext context, TestSingleplayerContext world, int x, int y, int z) {
+		world.getServer().runCommand("kill @e[type=!player]");
+		// What they dropped too, or it crowds the radar.
+		context.waitTicks(2);
+		world.getServer().runCommand("kill @e[type=item]");
+		world.getServer().runCommand("fill " + (x - 12) + " " + (y - 4) + " " + (z - 9) + " " + (x + 12) + " " + (y - 4) + " " + (z + 9) + " sand");
+		world.getServer().runCommand("fill " + (x - 12) + " " + (y - 3) + " " + (z - 9) + " " + (x + 12) + " " + (y - 1) + " " + (z + 9) + " water");
+		world.getServer().runCommand("fill " + x + " " + (y - 3) + " " + z + " " + x + " " + (y - 1) + " " + z + " stone");
+		world.getServer().runCommand("tp @a " + (x + 0.5) + " " + y + " " + (z + 0.5));
+		// The stand-in player from before would sit on one of them.
+		context.runOnClient(mc -> {
+			net.minecraft.world.entity.Entity other = mc.level.getEntity(-424242);
+			if (other != null) {
+				other.setPos(x + 200, y, z + 200);
+			}
+		});
+		// Name, NBT, and what to call it; those the version doesn't have are left out. The tropical
+		// fish are an orange small one and a yellow large one: their texture is white, coloured as drawn.
+		String[][] sea = {
+			{"squid", "", "Squid"}, {"glow_squid", "", "Glow squid"}, {"cod", "", "Cod"},
+			{"salmon", ",type:\"large\"", "Salmon (large)"}, {"salmon", ",type:\"small\"", "Salmon (small)"},
+			{"tropical_fish", ",Variant:65536", "Tropical fish (small)"}, {"tropical_fish", ",Variant:262145", "Tropical fish (large)"},
+			{"pufferfish", ",PuffState:0", "Pufferfish (deflated)"}, {"pufferfish", ",PuffState:1", "Pufferfish (half puffed)"},
+			{"pufferfish", ",PuffState:2", "Pufferfish (puffed)"}, {"dolphin", "", "Dolphin"}, {"axolotl", "", "Axolotl"}, {"turtle", "", "Turtle"},
+			{"guardian", "", "Guardian"}, {"elder_guardian", "", "Elder guardian"}, {"tadpole", "", "Tadpole"}, {"nautilus", "", "Nautilus"},
+			{"zombie_nautilus", "", "Zombie nautilus"}, {"squid", ",Age:-24000", "Baby squid"}, {"turtle", ",Age:-24000", "Baby turtle"},
+		};
+		java.util.List<String> known = world.getServer().computeOnServer(server -> {
+			java.util.List<String> names = new java.util.ArrayList<>();
+			for (net.minecraft.resources.Identifier id : net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.keySet()) {
+				for (String[] mob : sea) {
+					if (id.getNamespace().equals("minecraft") && id.getPath().equals(mob[0]) && !names.contains(mob[0])) {
+						names.add(mob[0]);
+					}
+				}
+			}
+			return names;
+		});
+		int slot = 0;
+		for (String[] mob : sea) {
+			if (!known.contains(mob[0])) {
+				continue;
+			}
+			// Five to a row, four rows, the player in the middle.
+			int mx = x - 8 + (slot % 5) * 4;
+			int mz = z - 7 + (slot / 5) * 4 + (slot / 5 >= 2 ? 2 : 0);
+			slot++;
+			world.getServer().runCommand("summon " + mob[0] + " " + (mx + 0.5) + " " + (y - 2) + " " + (mz + 0.5)
+				+ " {NoAI:1b,NoGravity:1b,PersistenceRequired:1b,Silent:1b,Invulnerable:1b" + mob[1] + "}");
+			dev.diorama.Diorama.LOGGER.info("SEA-MOB {} at {} {}", mob[2], mx, mz);
+		}
+		context.waitTicks(20);
+		context.runOnClient(mc -> {
+			for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+				@SuppressWarnings("rawtypes")
+				Object drawer = mc.getEntityRenderDispatcher().getRenderer(entity);
+				if (entity instanceof net.minecraft.world.entity.LivingEntity living && entity != mc.player && entity.distanceToSqr(mc.player) < 16 * 16
+					&& drawer instanceof net.minecraft.client.renderer.entity.LivingEntityRenderer renderer) {
+					dev.diorama.Diorama.LOGGER.info("SEA-FACE {}{} | model: {} | face: {}", entity.getType().toShortString(), living.isBaby() ? " (baby)" : "",
+						renderer.getModel().getClass().getSimpleName(), dev.diorama.render.MobFaces.describe(entity));
+				}
+			}
+		});
+		double minimapZoom = context.computeOnClient(mc -> Settings.get().minimapPixelsPerBlock);
+		context.runOnClient(mc -> Settings.get().minimapPixelsPerBlock = 4);
+		settle(context, 40);
+		context.takeScreenshot("radar-06-sea-minimap-heads");
+		context.setScreen(MapScreen::new);
+		context.runOnClient(mc -> ((MapScreen) mc.gui.screen()).lookAt(x + 0.5, Projection.v(y - 2, z + 0.5), 12.0, TileKey.SURFACE));
+		settle(context, 40);
+		// Where each one is on screen, in screen pixels, to cut them out of the screenshots.
+		context.runOnClient(mc -> {
+			double scale = mc.getWindow().getGuiScale();
+			for (Radar.Blip blip : ((MapScreen) mc.gui.screen()).blips()) {
+				dev.diorama.Diorama.LOGGER.info("SEA-BLIP {} {} {} at {} {} size {}", blip.entity().getType().toShortString(),
+					blip.entity().getBlockX(), blip.entity().getBlockZ(), Math.round(blip.x() * scale), Math.round(blip.y() * scale), Math.round(blip.size() * scale));
+			}
+		});
+		context.takeScreenshot("radar-07-sea-map-heads");
+		context.runOnClient(mc -> Settings.get().radarStyle = Settings.RadarStyle.FRAMED);
+		context.waitTicks(5);
+		context.takeScreenshot("radar-08-sea-map-framed");
+		context.setScreen(() -> null);
+		context.waitTicks(5);
+		context.takeScreenshot("radar-09-sea-minimap-framed");
+		context.runOnClient(mc -> {
+			Settings.get().radarStyle = Settings.RadarStyle.HEADS;
+			Settings.get().minimapPixelsPerBlock = minimapZoom;
+		});
+		context.runOnClient(mc -> {
+			StringBuilder dots = new StringBuilder();
+			for (String name : known) {
+				boolean face = false;
+				for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+					face |= entity.getType().toShortString().equals(name) && dev.diorama.render.MobFaces.canDraw(entity);
+				}
+				if (!face) {
+					dots.append(' ').append(name);
+				}
+			}
+			if (!dots.isEmpty()) {
+				throw new AssertionError("Sea creatures drawn as dots:" + dots);
+			}
+		});
+		world.getServer().runCommand("kill @e[type=!player]");
 	}
 
 	private static boolean showsItem(MapScreen screen) {

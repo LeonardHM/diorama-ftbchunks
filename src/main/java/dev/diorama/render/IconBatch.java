@@ -174,11 +174,31 @@ public final class IconBatch {
 
 	/** {@link MapCanvas#blit}: a {@code w} x {@code h} rectangle of a game texture at (u, v), drawn at (x, y) the same size. */
 	public void blit(Identifier texture, int x, int y, int u, int v, int w, int h, int texW, int texH, int argb) {
+		this.blit(texture, x, y, u, v, w, h, texW, texH, argb, false);
+	}
+
+	/** {@link #blit}, flipped left to right when {@code mirrored}. */
+	public void blit(Identifier texture, int x, int y, int u, int v, int w, int h, int texW, int texH, int argb, boolean mirrored) {
+		float u0 = (float) (mirrored ? u + w : u) / texW;
+		float u1 = (float) (mirrored ? u : u + w) / texW;
 		if (!this.batched) {
-			MapCanvas.of(this.graphics).blit(texture, x, y, u, v, w, h, texW, texH, argb);
+			if (!mirrored) {
+				MapCanvas.of(this.graphics).blit(texture, x, y, u, v, w, h, texW, texH, argb);
+				return;
+			}
+			// The game's own blit can't flip: one quad, its corners placed the way a batch places them.
+			float[] xyz = new float[12];
+			this.place(x, y, xyz, 0);
+			this.place(x, y + h, xyz, 3);
+			this.place(x + w, y + h, xyz, 6);
+			this.place(x + w, y, xyz, 9);
+			float v0 = (float) v / texH;
+			float v1 = (float) (v + h) / texH;
+			float[] uvs = {u0, v0, u0, v1, u1, v1, u1, v0};
+			MapCanvas.of(this.graphics).blits(texture, xyz, uvs, new int[] {argb}, 1);
 			return;
 		}
-		this.add(this.textureId(texture), x, y, x + w, y + h, (float) u / texW, (float) v / texH, (float) (u + w) / texW, (float) (v + h) / texH, argb);
+		this.add(this.textureId(texture), x, y, x + w, y + h, u0, (float) v / texH, u1, (float) (v + h) / texH, argb);
 	}
 
 	/** {@link MapCanvas#rect}: an axis-aligned rectangle of one of the mod's textures. */
@@ -302,21 +322,25 @@ public final class IconBatch {
 	}
 
 	private void corner(int q, int i, float x, float y, float u, float v) {
-		int p = (q * 4 + i) * 3;
-		//? if >=1.21.6 {
-		Vector2f at = this.graphics.pose().transformPosition(x, y, this.at);
-		this.xyz[p] = at.x;
-		this.xyz[p + 1] = at.y;
-		//?} else {
-		/*Matrix4f pose = this.graphics.pose().last().pose();
-		Vector3f at = pose.transformPosition(x, y, 0, this.at);
-		this.xyz[p] = at.x;
-		this.xyz[p + 1] = at.y;
-		this.xyz[p + 2] = at.z;
-		*///?}
+		this.place(x, y, this.xyz, (q * 4 + i) * 3);
 		int t = (q * 4 + i) * 2;
 		this.uvs[t] = u;
 		this.uvs[t + 1] = v;
+	}
+
+	/** Puts (x, y) in the current pose at {@code xyz[p]}. */
+	private void place(float x, float y, float[] xyz, int p) {
+		//? if >=1.21.6 {
+		Vector2f at = this.graphics.pose().transformPosition(x, y, this.at);
+		xyz[p] = at.x;
+		xyz[p + 1] = at.y;
+		//?} else {
+		/*Matrix4f pose = this.graphics.pose().last().pose();
+		Vector3f at = pose.transformPosition(x, y, 0, this.at);
+		xyz[p] = at.x;
+		xyz[p + 1] = at.y;
+		xyz[p + 2] = at.z;
+		*///?}
 	}
 
 	/**

@@ -1,5 +1,7 @@
 package dev.diorama.test;
 
+import com.mojang.blaze3d.platform.InputConstants;
+import dev.diorama.DioramaClient;
 import dev.diorama.Facing;
 import dev.diorama.MapExport;
 import dev.diorama.MapScreen;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -79,9 +82,33 @@ final class FacingTest {
 			DrawingStore.get().add(made);
 			return made;
 		});
+		// The Turn map key is unbound until the player binds it.
+		context.runOnClient(mc -> {
+			DioramaClient.TURN_MAP.setKey(InputConstants.getKey("key.keyboard.f8"));
+			KeyMapping.resetMapping();
+		});
 		context.setScreen(MapScreen::new);
 		for (Facing facing : Facing.values()) {
-			if (facing != Facing.NORTH) {
+			if (facing == Facing.EAST) {
+				// By the key, on the map: held down it repeats, and still turns the map once.
+				context.getInput().holdKey(DioramaClient.TURN_MAP);
+				context.waitTicks(2);
+				for (int i = 0; i < 5; i++) {
+					context.runOnClient(mc -> {
+						//? if >=1.21.9 {
+						mc.gui.screen().keyPressed(new net.minecraft.client.input.KeyEvent(InputConstants.getKey("key.keyboard.f8").getValue(), 0, 0));
+						//?} else {
+						/*mc.gui.screen().keyPressed(InputConstants.getKey("key.keyboard.f8").getValue(), 0, 0);
+						*///?}
+					});
+					context.waitTicks(1);
+				}
+				context.getInput().releaseKey(DioramaClient.TURN_MAP);
+				context.waitTicks(2);
+				if (Projection.facing() != Facing.EAST) {
+					throw new AssertionError("The Turn map key, held on the map facing north, left it facing " + Projection.facing());
+				}
+			} else if (facing != Facing.NORTH) {
 				context.runOnClient(mc -> ((MapScreen) mc.gui.screen()).turn(1));
 			}
 			double[] face = faces[facing.turns];
@@ -140,8 +167,27 @@ final class FacingTest {
 		context.takeScreenshot("facing-minimap-west");
 		heldLight(context, world);
 
+		// By the key with no screen open: the minimap turns, once however long the key is held.
+		context.waitTicks(40);
+		context.takeScreenshot("facing-minimap-west-before-key");
+		context.getInput().holdKey(DioramaClient.TURN_MAP);
+		context.waitTicks(2);
+		for (int i = 0; i < 5; i++) {
+			context.runOnClient(mc -> KeyMapping.click(InputConstants.getKey("key.keyboard.f8")));
+			context.waitTicks(1);
+		}
+		context.getInput().releaseKey(DioramaClient.TURN_MAP);
+		context.waitTicks(3);
+		if (Projection.facing() != Facing.NORTH || context.computeOnClient(mc -> Maps.get().facing()) != Facing.NORTH) {
+			throw new AssertionError("The Turn map key, held in the world facing west, left the map facing " + Projection.facing());
+		}
+		context.waitTicks(40);
+		context.takeScreenshot("facing-minimap-north-by-key");
+		context.runOnClient(mc -> {
+			DioramaClient.TURN_MAP.setKey(InputConstants.UNKNOWN);
+			KeyMapping.resetMapping();
+		});
 		context.setScreen(MapScreen::new);
-		context.runOnClient(mc -> ((MapScreen) mc.gui.screen()).turn(1));
 		context.waitTicks(10);
 		context.takeScreenshot("facing-north-again");
 

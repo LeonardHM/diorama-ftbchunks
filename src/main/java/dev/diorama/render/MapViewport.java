@@ -205,12 +205,22 @@ public final class MapViewport {
 	 * {@link #DETAILED_ZOOM}: above it the live tiles' own mipmaps look the same and never lag
 	 * behind recent changes. Stepping one finer, the full map can reach the live tiles a little below
 	 * it too.
+	 *
+	 * <p>A wide view just above {@link #DETAILED_ZOOM} is the exception: a big screen at a small GUI
+	 * scale shows more detailed tiles there than stay in memory, so the map dropped tiles it was
+	 * drawing and baked them again for as long as the view stayed. It draws the first overview level
+	 * until the detailed tiles fit, while that level still has a texture pixel per screen pixel and
+	 * below {@link #OVERLAY_ZOOM}, as only detailed tiles carry the overlays.
 	 */
 	public static int lodFor(MapLevel level, View view) {
-		if (view.layer() != TileKey.SURFACE || !level.hasOverviews() || view.zoom() >= DETAILED_ZOOM) {
+		if (view.layer() != TileKey.SURFACE || !level.hasOverviews()) {
 			return 0;
 		}
 		double screenPixelsPerUnit = view.zoom() * Minecraft.getInstance().getWindow().getGuiScale();
+		if (view.zoom() >= DETAILED_ZOOM) {
+			boolean wide = !view.follows() && view.zoom() < OVERLAY_ZOOM && mostTilesFor(view, 0) > MapLevel.KEPT_TILES;
+			return wide && Projection.PIXELS_PER_UNIT / 2.0 >= screenPixelsPerUnit ? 1 : 0;
+		}
 		int lod = 0;
 		while (lod < TileKey.MAX_LOD && Projection.PIXELS_PER_UNIT / (double) (2 << lod) >= screenPixelsPerUnit) {
 			lod++;

@@ -166,7 +166,7 @@ public final class MapLevel implements ChunkSource {
 	public static final double OUTSIDE_VIEW = 100_000;
 	/** As many as a 4K screen shows at the zoom overview tiles start from. */
 	private static final int MAX_VIEW_TILES = 256;
-	/** The sky view tiles the views last showed, most wanted first; see {@link #importFocus()}. */
+	/** The detailed sky view tiles under what the views last showed, most wanted first; see {@link #importFocus()}. */
 	private volatile List<TileKey> viewTiles = List.of();
 	/** Where the views last looked, in map space, and when; see {@link #importFocus()}. */
 	private volatile double focusU;
@@ -967,8 +967,18 @@ public final class MapLevel implements ChunkSource {
 				this.focusMs = now;
 				List<TileKey> inView = new ArrayList<>();
 				for (Map.Entry<TileKey, Double> entry : order) {
-					if (entry.getValue() < OUTSIDE_VIEW && entry.getKey().lod() == 0 && !entry.getKey().isCave() && inView.size() < MAX_VIEW_TILES) {
-						inView.add(entry.getKey());
+					TileKey key = entry.getKey();
+					if (entry.getValue() >= OUTSIDE_VIEW || key.isCave() || inView.size() >= MAX_VIEW_TILES) {
+						continue;
+					}
+					if (key.lod() == 0) {
+						inView.add(key);
+					} else if (key.lod() == 1) {
+						// A view on the first overview level shows the four detailed tiles under each of
+						// its tiles, and the save's chunks are drawn onto those.
+						for (int i = 0; i < 4; i++) {
+							inView.add(new TileKey(key.layer(), key.tileU() * 2 + (i & 1), key.tileV() * 2 + (i >> 1)));
+						}
 					}
 				}
 				this.viewTiles = inView;

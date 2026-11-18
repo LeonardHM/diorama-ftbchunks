@@ -519,7 +519,7 @@ public final class MapScreen extends Screen {
 		if (!elsewhere && ServerRules.radarAllowed() && Settings.get().radarOnMap) {
 			this.blips = Radar.collect(view, a, true);
 			Radar.draw(graphics, view, this.blips, true, false);
-			hovered = Radar.under(this.blips, mouseX, mouseY);
+			hovered = Radar.under(view, this.blips, mouseX, mouseY);
 		}
 		WaypointStore store = WaypointStore.get();
 		this.pins = store == null || !Settings.get().waypointsOnMap ? List.of() : this.layoutPins(view, store.shownIn(this.dimension()));

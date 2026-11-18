@@ -342,8 +342,9 @@ public final class Radar {
 			int columns = Math.min(2, kinds);
 			int rows = (kinds + 1) / 2;
 			// Around the pile's middle, as far as its pictures stay inside its square.
-			float left = view.screenX(pile.squareX * size * 2 / view.zoom());
-			float top = view.screenY(pile.squareY * size * 2 / view.zoom());
+			// In doubles: far from the world's middle a float can't tell one square from the next.
+			float left = view.screenX(pile.squareX * (size * 2.0) / view.zoom());
+			float top = view.screenY(pile.squareY * (size * 2.0) / view.zoom());
 			float cx = Math.max(left + columns * size / 2, Math.min(left + size * 2 - columns * size / 2, pile.x / pile.count));
 			float cy = Math.max(top + rows * size / 2, Math.min(top + size * 2 - rows * size / 2, pile.y / pile.count));
 			if (drawn + kinds > MAX_ITEM_PICTURES) {

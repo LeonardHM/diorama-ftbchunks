@@ -147,6 +147,21 @@ public final class MapSession {
 		}
 	}
 
+	/** Turns this world's map by quarter turns, outside the map screen. False if there is no map here or the facing couldn't be saved. */
+	public static boolean turn(int steps) {
+		Maps maps = Maps.get();
+		if (maps == null || current == null) {
+			return false;
+		}
+		Facing now = Projection.facing().next(steps);
+		if (!maps.facing(now)) {
+			return false;
+		}
+		Projection.setFacing(now);
+		facingChanged();
+		return true;
+	}
+
 	public static @Nullable MapSession get() {
 		return current;
 	}

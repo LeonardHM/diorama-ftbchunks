@@ -45,7 +45,7 @@ Your own map can show in a browser too, on a second monitor, a tablet or a phone
 | `U` | List your waypoints |
 | `=` / `-` | Zoom the minimap in and out |
 
-You can change these in Minecraft's **Controls** screen, under Diorama. Map settings, hiding the minimap, hiding the waypoints in the world and switching the map's dimension have keys too, unbound until you set one.
+You can change these in Minecraft's **Controls** screen, under Diorama. Map settings, hiding the minimap, hiding the waypoints in the world, switching the map's dimension and turning the map have keys too, unbound until you set one.
 
 On the fullscreen map, drag to move around, scroll to zoom, click a waypoint to edit it and right-click anywhere else for the menu. `C` switches between the surface and the cave view, `PgUp` and `PgDn` move the cave view up and down, and `Space` brings the map back to you. While drawing, right-drag moves the map, `Ctrl+Z` undoes and `Esc` stops drawing.
 

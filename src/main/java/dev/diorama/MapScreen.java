@@ -174,6 +174,12 @@ public final class MapScreen extends Screen {
 	/** That map while it's open. It's closed with the screen, and with each screen opened over this one. */
 	private @Nullable OtherMap otherMap;
 	private Button facingButton;
+	/**
+	 * The Turn map key is down since a press that turned the map. Kept while another screen is over this
+	 * one, so a key still held on coming back doesn't turn the map again; let go over there, its next
+	 * press here is taken for the held one and does nothing.
+	 */
+	private boolean turnKeyHeld;
 
 	/** A dimension's saved map, and what it was opened for: a change to either opens it again. */
 	private record OtherMap(Path folder, MapStyle style, Facing facing, MapLevel map) {
@@ -704,7 +710,7 @@ public final class MapScreen extends Screen {
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
 		this.draw.anyPress(event.x(), event.y());
-		return this.boundPressed(event.button(), DioramaClient.WAYPOINT_LIST.matchesMouse(event), DioramaClient.OPEN_MAP.matchesMouse(event), DioramaClient.TOGGLE_DIMENSION.matchesMouse(event))
+		return this.boundPressed(event.button(), DioramaClient.WAYPOINT_LIST.matchesMouse(event), DioramaClient.OPEN_MAP.matchesMouse(event), DioramaClient.TOGGLE_DIMENSION.matchesMouse(event), DioramaClient.TURN_MAP.matchesMouse(event))
 			|| this.menuPressed(event.x(), event.y(), event.button()) || this.clicked(super.mouseClicked(event, doubleClick), event.x(), event.y(), event.button());
 	}
 
@@ -720,14 +726,22 @@ public final class MapScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
-		return this.keyDown(event.key(), DioramaClient.WAYPOINT_LIST.matches(event), DioramaClient.OPEN_MAP.matches(event), DioramaClient.TOGGLE_DIMENSION.matches(event))
+		return this.keyDown(event.key(), DioramaClient.WAYPOINT_LIST.matches(event), DioramaClient.OPEN_MAP.matches(event), DioramaClient.TOGGLE_DIMENSION.matches(event), DioramaClient.TURN_MAP.matches(event))
 			|| super.keyPressed(event);
+	}
+
+	@Override
+	public boolean keyReleased(KeyEvent event) {
+		if (DioramaClient.TURN_MAP.matches(event)) {
+			this.turnKeyHeld = false;
+		}
+		return super.keyReleased(event);
 	}
 	//?} else {
 	/*@Override
 	public boolean mouseClicked(double x, double y, int button) {
 		this.draw.anyPress(x, y);
-		return this.boundPressed(button, DioramaClient.WAYPOINT_LIST.matchesMouse(button), DioramaClient.OPEN_MAP.matchesMouse(button), DioramaClient.TOGGLE_DIMENSION.matchesMouse(button))
+		return this.boundPressed(button, DioramaClient.WAYPOINT_LIST.matchesMouse(button), DioramaClient.OPEN_MAP.matchesMouse(button), DioramaClient.TOGGLE_DIMENSION.matchesMouse(button), DioramaClient.TURN_MAP.matchesMouse(button))
 			|| this.menuPressed(x, y, button) || this.clicked(super.mouseClicked(x, y, button), x, y, button);
 	}
 
@@ -743,8 +757,16 @@ public final class MapScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(int key, int scancode, int modifiers) {
-		return this.keyDown(key, DioramaClient.WAYPOINT_LIST.matches(key, scancode), DioramaClient.OPEN_MAP.matches(key, scancode), DioramaClient.TOGGLE_DIMENSION.matches(key, scancode))
+		return this.keyDown(key, DioramaClient.WAYPOINT_LIST.matches(key, scancode), DioramaClient.OPEN_MAP.matches(key, scancode), DioramaClient.TOGGLE_DIMENSION.matches(key, scancode), DioramaClient.TURN_MAP.matches(key, scancode))
 			|| super.keyPressed(key, scancode, modifiers);
+	}
+
+	@Override
+	public boolean keyReleased(int key, int scancode, int modifiers) {
+		if (DioramaClient.TURN_MAP.matches(key, scancode)) {
+			this.turnKeyHeld = false;
+		}
+		return super.keyReleased(key, scancode, modifiers);
 	}
 	*///?}
 
@@ -753,12 +775,12 @@ public final class MapScreen extends Screen {
 	 * is: widgets only click with the left button. The map is used with the left and right buttons,
 	 * and pans with the middle one while drawing, so a binding on those does nothing here.
 	 */
-	private boolean boundPressed(int button, boolean waypointListKey, boolean mapKey, boolean dimensionKey) {
+	private boolean boundPressed(int button, boolean waypointListKey, boolean mapKey, boolean dimensionKey, boolean turnKey) {
 		if (button == InputConstants.MOUSE_BUTTON_LEFT || button == InputConstants.MOUSE_BUTTON_RIGHT
 			|| (button == InputConstants.MOUSE_BUTTON_MIDDLE && this.draw.active())) {
 			return false;
 		}
-		return this.bindingPressed(waypointListKey, mapKey, dimensionKey);
+		return this.bindingPressed(waypointListKey, mapKey, dimensionKey, turnKey);
 	}
 
 	/**
@@ -1158,13 +1180,19 @@ public final class MapScreen extends Screen {
 	}
 
 	/** A key press, and whether it is bound to the waypoint list or the map; false leaves it to the screen. */
-	private boolean keyDown(int key, boolean waypointListKey, boolean mapKey, boolean dimensionKey) {
+	private boolean keyDown(int key, boolean waypointListKey, boolean mapKey, boolean dimensionKey, boolean turnKey) {
 		if (this.draw.typing()) {
 			// Typing a note: only Enter and Esc are the map's, the rest are the note's.
 			return this.draw.key(key, this.dimension());
 		}
 		// The player's own bindings come before the map's fixed keys, so Open map rebound to C still closes it.
-		if (this.bindingPressed(waypointListKey, mapKey, dimensionKey)) {
+		if (turnKey) {
+			// A key held down repeats, and each turn redraws the whole map: only the press turns it.
+			boolean held = this.turnKeyHeld;
+			this.turnKeyHeld = true;
+			return held || this.bindingPressed(false, false, false, true);
+		}
+		if (this.bindingPressed(waypointListKey, mapKey, dimensionKey, false)) {
 			return true;
 		}
 		if (key == InputConstants.KEY_ESCAPE && this.menu != null) {
@@ -1202,7 +1230,14 @@ public final class MapScreen extends Screen {
 		return false;
 	}
 
-	private boolean bindingPressed(boolean waypointListKey, boolean mapKey, boolean dimensionKey) {
+	private boolean bindingPressed(boolean waypointListKey, boolean mapKey, boolean dimensionKey, boolean turnKey) {
+		if (turnKey) {
+			// As the facing button, which is hidden while drawing: turning moves what's being drawn on.
+			if (!this.draw.active()) {
+				this.turn(DrawMode.shiftDown() ? -1 : 1);
+			}
+			return true;
+		}
 		if (dimensionKey) {
 			this.nextDimension();
 			return true;
@@ -1509,7 +1544,9 @@ public final class MapScreen extends Screen {
 			MapSession session = MapSession.get();
 			boolean walk = session != null && session.map().memory() != null && session.savedChunks() == null;
 			return tip(this.facingButton, Component.translatable("diorama.map.facing." + Projection.facing().id()),
-				Component.translatable(walk ? "diorama.map.facing_walk" : "diorama.map.facing_turn"));
+				walk ? Component.translatable("diorama.map.facing_walk")
+					: DioramaClient.TURN_MAP.isUnbound() ? Component.translatable("diorama.map.facing_turn")
+					: Component.translatable("diorama.map.facing_turn_key", DioramaClient.TURN_MAP.getTranslatedKeyMessage()));
 		}
 		if (on(this.recenter, x, y)) {
 			return tip(this.recenter, Component.translatable("diorama.map.recenter"), key(keyName(InputConstants.KEY_SPACE)));

@@ -18,8 +18,10 @@
 		"FtbChunksUpdateMixin",
 		"GameRendererMixin",
 		"LevelChunkMixin",
+		"PufferfishRendererAccessor",
 		"RealmsServerMixin",
-		"SpriteContentsMixin"
+		"SpriteContentsMixin",
+		"TropicalFishRendererAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

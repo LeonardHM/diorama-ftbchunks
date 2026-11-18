@@ -30,7 +30,12 @@ public final class MobFaces {
 	 * A face {@code w} x {@code h} pixels, drawn as rectangles of a texture of the given size, in
 	 * order, each at {@code (dx, dy)} in face pixels.
 	 */
-	record Face(int texW, int texH, int w, int h, List<Piece> pieces) {
+	record Face(int texW, int texH, int w, int h, List<Piece> pieces, boolean whole) {
+		/** {@code whole} for a mob with no head to read, pictured whole (see {@link ModelFaces}). */
+		Face(int texW, int texH, int w, int h, List<Piece> pieces) {
+			this(texW, texH, w, h, pieces, false);
+		}
+
 		Face(int texW, int texH, int u, int v, int w, int h) {
 			this(texW, texH, u, v, w, h, null, null);
 		}
@@ -55,7 +60,11 @@ public final class MobFaces {
 		}
 	}
 
-	record Piece(int u, int v, int w, int h, int dx, int dy) {
+	/** {@code mirrored} for a rectangle drawn flipped left to right: the far side of a fish's fin. */
+	record Piece(int u, int v, int w, int h, int dx, int dy, boolean mirrored) {
+		Piece(int u, int v, int w, int h, int dx, int dy) {
+			this(u, v, w, h, dx, dy, false);
+		}
 	}
 
 	/** An adult face, and a baby's when babies have their own texture layout (or null for a dot). */
@@ -204,7 +213,7 @@ public final class MobFaces {
 		StringBuilder out = new StringBuilder().append(face.texW()).append('x').append(face.texH()).append(' ').append(face.w()).append('x').append(face.h());
 		for (Piece p : face.pieces()) {
 			out.append(" | ").append(p.u()).append(',').append(p.v()).append(' ').append(p.w()).append('x').append(p.h())
-				.append(" at ").append(p.dx()).append(',').append(p.dy());
+				.append(" at ").append(p.dx()).append(',').append(p.dy()).append(p.mirrored() ? " mirrored" : "");
 		}
 		return out.toString();
 	}
@@ -246,7 +255,7 @@ public final class MobFaces {
 		graphics.pose().pushMatrix();
 		graphics.pose().translate(x - w / 2, y - h / 2);
 		graphics.pose().scale(scale);
-		blitFace(icons, texture, face, color);
+		blitFace(icons, texture, face, tinted(entity, color));
 		graphics.pose().popMatrix();
 		return true;
 	}
@@ -264,7 +273,7 @@ public final class MobFaces {
 		}
 		float texel = Radar.texel(size, Math.max(face.w(), face.h()));
 		Radar.pixelFrame(icons, x, y, face.w(), face.h(), texel, outline, alpha);
-		blitFace(icons, texture, face, color);
+		blitFace(icons, texture, face, tinted(entity, color));
 		GuiGraphicsExtractor graphics = icons.graphics();
 		graphics.pose().popMatrix();
 		return true;
@@ -272,8 +281,28 @@ public final class MobFaces {
 
 	private static void blitFace(IconBatch icons, Identifier texture, Face face, int color) {
 		for (Piece p : face.pieces()) {
-			icons.blit(texture, p.dx(), p.dy(), p.u(), p.v(), p.w(), p.h(), face.texW(), face.texH(), color);
+			icons.blit(texture, p.dx(), p.dy(), p.u(), p.v(), p.w(), p.h(), face.texW(), face.texH(), color, p.mirrored());
 		}
+	}
+
+	/**
+	 * The colour to draw a face in: a tropical fish's texture is white, and the game colours it with
+	 * the fish's own base colour. Its pattern, a layer of its own, isn't drawn.
+	 */
+	private static int tinted(Entity entity, int color) {
+		if (!(entity instanceof net.minecraft.world.entity.animal.fish.TropicalFish fish)) {
+			return color;
+		}
+		//? if >=1.21 {
+		int tint = fish.getBaseColor().getTextureDiffuseColor();
+		//?} else {
+		/*float[] rgb = fish.getBaseColor().getTextureDiffuseColors();
+		int tint = Math.round(rgb[0] * 255) << 16 | Math.round(rgb[1] * 255) << 8 | Math.round(rgb[2] * 255);
+		*///?}
+		int r = (color >> 16 & 0xFF) * (tint >> 16 & 0xFF) / 255;
+		int g = (color >> 8 & 0xFF) * (tint >> 8 & 0xFF) / 255;
+		int b = (color & 0xFF) * (tint & 0xFF) / 255;
+		return color & 0xFF000000 | r << 16 | g << 8 | b;
 	}
 
 	/** Cold cows use a different model, with the muzzle elsewhere in the texture. */
@@ -359,7 +388,11 @@ public final class MobFaces {
 	 * the rest for adults, and the face is only used if all of this mob's age's models agree.
 	 */
 	@SuppressWarnings("rawtypes")
-	private static @Nullable Face modelFace(LivingEntityRenderer renderer, boolean baby, @Nullable Object state) {
+	private static @Nullable Face modelFace(LivingEntityRenderer renderer, Entity entity, boolean baby, @Nullable Object state) {
+		Model fish = fishModel(renderer, entity);
+		if (fish != null) {
+			return ModelFaces.of(fish, state);
+		}
 		//? if >=1.21.2 {
 		if (renderer instanceof net.minecraft.client.renderer.entity.AgeableMobRenderer) {
 			Model model = ageableModel(renderer, baby);
@@ -389,20 +422,56 @@ public final class MobFaces {
 			}
 		}
 		boolean sorted = forBabies.contains(baby);
-		Face face = null;
+		// A head read off one model beats a whole mob read off another, which has no head to read.
+		Face head = null;
+		Face whole = null;
+		boolean headsDiffer = false;
+		boolean wholesDiffer = false;
 		for (int i = 0; i < models.size(); i++) {
 			if (sorted && forBabies.get(i) != baby) {
 				continue;
 			}
 			Face read = ModelFaces.of(models.get(i), state);
-			if (read != null) {
-				if (face != null && !face.equals(read)) {
-					return null;
-				}
-				face = read;
+			if (read == null) {
+				continue;
+			}
+			if (read.whole()) {
+				wholesDiffer |= whole != null && !whole.equals(read);
+				whole = read;
+			} else {
+				headsDiffer |= head != null && !head.equals(read);
+				head = read;
 			}
 		}
-		return face;
+		if (head != null) {
+			return headsDiffer ? null : head;
+		}
+		return wholesDiffer ? null : whole;
+	}
+
+	/**
+	 * The model a pufferfish or tropical fish is drawn with. Their renderers keep one model per puff
+	 * size or body shape, with different faces, and switch to this fish's as they draw it, so the
+	 * one they hold is the last fish's. Null for other renderers.
+	 */
+	@SuppressWarnings("rawtypes")
+	private static @Nullable Model fishModel(LivingEntityRenderer renderer, Entity entity) {
+		if (renderer instanceof dev.diorama.mixin.PufferfishRendererAccessor puffer && entity instanceof net.minecraft.world.entity.animal.fish.Pufferfish fish) {
+			return switch (fish.getPuffState()) {
+				case 0 -> puffer.diorama$small();
+				case 1 -> puffer.diorama$mid();
+				default -> puffer.diorama$big();
+			};
+		}
+		if (renderer instanceof dev.diorama.mixin.TropicalFishRendererAccessor tropical && entity instanceof net.minecraft.world.entity.animal.fish.TropicalFish fish) {
+			//? if >=1.21.5 {
+			net.minecraft.world.entity.animal.fish.TropicalFish.Base shape = fish.getPattern().base();
+			//?} else {
+			/*net.minecraft.world.entity.animal.fish.TropicalFish.Base shape = fish.getVariant().base();
+			*///?}
+			return shape == net.minecraft.world.entity.animal.fish.TropicalFish.Base.SMALL ? tropical.diorama$small() : tropical.diorama$large();
+		}
+		return null;
 	}
 
 	private static boolean babyName(String name) {
@@ -437,7 +506,7 @@ public final class MobFaces {
 		}
 		try {
 			LivingEntityRenderState state = (LivingEntityRenderState) ((LivingEntityRenderer) living).createRenderState((LivingEntity) entity, 1.0F);
-			return new Looked(((LivingEntityRenderer) living).getTextureLocation(state), modelFace(living, baby, state), age, baby);
+			return new Looked(((LivingEntityRenderer) living).getTextureLocation(state), modelFace(living, entity, baby, state), age, baby);
 		} catch (RuntimeException e) {
 			return new Looked(null, null, age, baby);
 		}
@@ -447,7 +516,7 @@ public final class MobFaces {
 		EntityRenderer<?> renderer = Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(entity);
 		try {
 			Identifier texture = ((EntityRenderer) renderer).getTextureLocation(entity);
-			Face face = renderer instanceof LivingEntityRenderer living ? modelFace(living, baby, null) : null;
+			Face face = renderer instanceof LivingEntityRenderer living ? modelFace(living, entity, baby, null) : null;
 			return new Looked(texture, face, age, baby);
 		} catch (RuntimeException e) {
 			return new Looked(null, null, age, baby);

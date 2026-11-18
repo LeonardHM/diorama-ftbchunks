@@ -111,8 +111,9 @@ stonecutter parameters {
 		"\\bIdentifier\\b" to "ResourceLocation",
 		"\\b(read|write)Identifier\\b" to "$1ResourceLocation",
 		"\\.identifier\\(\\)" to ".location()",
-		// Cows had no package of their own.
+		// Cows had no package of their own, nor fish.
 		"net\\.minecraft\\.world\\.entity\\.animal\\.cow\\." to "net.minecraft.world.entity.animal.",
+		"net\\.minecraft\\.world\\.entity\\.animal\\.fish\\." to "net.minecraft.world.entity.animal.",
 		// Game rules had camel-case names (the tests set them by command).
 		"\\bgamerule show_death_messages\\b" to "gamerule showDeathMessages",
 		"\\bgamerule immediate_respawn\\b" to "gamerule doImmediateRespawn",

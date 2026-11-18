@@ -76,18 +76,28 @@ dev=versions/$node/build/run/clientGameTest
 run=$dev
 with_mods=()
 mods=~/test-mods
-rm -rf "$mods"
-if [ -e ~/mods.tgz ]; then
-	mkdir -p "$mods" ~/mod-cache && tar xzf ~/mods.tgz -C "$mods" || exit 1
+rm -rf "$mods" ~/test-server-mods
+# Unpacks a mods tgz from boat_run.py into a folder: its jars, and the ones urls.txt names downloaded.
+unpack_mods() {
+	mkdir -p "$2" ~/mod-cache && tar xzf "$1" -C "$2" || return 1
 	while IFS=$'\t' read -r name url; do
 		# A download stays on the VM for its next runs.
 		cached=~/mod-cache/$(printf %s "$url" | sha1sum | cut -c1-12)-$name
 		if [ ! -s "$cached" ]; then
-			curl -sSfL --retry 3 -o "$cached.part" "$url" && mv "$cached.part" "$cached" || exit 1
+			curl -sSfL --retry 3 -o "$cached.part" "$url" && mv "$cached.part" "$cached" || return 1
 		fi
-		cp "$cached" "$mods/$name" || exit 1
-	done < "$mods/urls.txt"
-	rm "$mods/urls.txt"
+		cp "$cached" "$2/$name" || return 1
+	done < "$2/urls.txt"
+	rm "$2/urls.txt"
+}
+# --server-mods: jars for the real server only, beside the run's --mods.
+if [ -e ~/server-mods.tgz ] && [ -n "${DIORAMA_REAL_SERVER:-}" ]; then
+	unpack_mods ~/server-mods.tgz ~/test-server-mods || exit 1
+	mark "other mods on the real server only: $(ls ~/test-server-mods | tr '\n' ' ')"
+	export REAL_SERVER_MODS=~/test-server-mods
+fi
+if [ -e ~/mods.tgz ]; then
+	unpack_mods ~/mods.tgz "$mods" || exit 1
 	mark "other mods: $(ls "$mods" | tr '\n' ' ')"
 	case "$node" in
 		*-neoforge) ;;
@@ -110,7 +120,10 @@ if [ -e ~/mods.tgz ]; then
 	esac
 	export DIORAMA_TEST_MODS=$mods
 	# The real server gets the same jars (real_server.sh): a claims mod has to be on both sides.
-	[ -n "${DIORAMA_REAL_SERVER:-}" ] && export REAL_SERVER_MODS=$mods
+	if [ -n "${DIORAMA_REAL_SERVER:-}" ]; then
+		mkdir -p ~/test-server-mods && cp "$mods"/*.jar ~/test-server-mods/ || exit 1
+		export REAL_SERVER_MODS=~/test-server-mods
+	fi
 fi
 rm -rf "$dev/screenshots" "$dev/crash-reports" "$dev/logs" "$run/screenshots" "$run/crash-reports" "$run/logs" ~/result ~/result.tgz ~/thread-dumps
 # The game starts from the folder the snapshot left (its settings, options and map folders), on a

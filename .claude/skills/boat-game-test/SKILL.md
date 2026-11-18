@@ -48,6 +48,12 @@ With `--env DIORAMA_REAL_SERVER=1`, the real server gets the same jars in its `m
 python .claude/skills/boat-game-test/boat_run.py 1.21.1 --tests web-map-claims --mods ftb --env DIORAMA_REAL_SERVER=1 --type large
 ```
 
+For a server mod the player doesn't have, `--server-mods` takes the same kinds of items and puts them on the real server only, beside any `--mods`; the game starts without them. It needs `--env DIORAMA_REAL_SERVER=1`.
+
+```
+python .claude/skills/boat-game-test/boat_run.py 26.3 --tests chunky-border --server-mods chunky-border --env DIORAMA_REAL_SERVER=1
+```
+
 | Node | How the jars load |
 |---|---|
 | Fabric 26.x | The usual run, with Fabric Loader's `fabric.addMods` |

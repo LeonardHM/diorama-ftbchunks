@@ -35,7 +35,18 @@ On unclaimed chunks: Claim chunk.
 
 Overlays tab: Claim style cycles Surface, Ground outline and Walls.
 
-## 6. Radar text size
+## 6. Minimap info lines
+![Minimap tab](https://raw.githubusercontent.com/LeonardHM/diorama-ftbchunks/screenshots/screenshots/09-minimap-tab.png)
+
+Minimap tab, new options for the lines under the minimap:
+- **Coordinates size, Biome name size, Claim text size** (and Game time size when the clock is on): each line has its own size, and "Off" hides it. This replaces the old Coordinates and Biome checkboxes; existing settings are migrated.
+- **Info line order**: opens a screen to reorder the lines (coordinates, biome, claim, time).
+- **Info text alignment**: Auto (follows the minimap corner), Left, Center or Right.
+- **Clan color on minimap**: how the claim owner's colour is shown on the claim line (square icon, coloured text, both or none).
+
+The claim line shows the owner of the chunk you stand in and whether it is force-loaded.
+
+## 7. Radar text size
 ![Radar text size](https://raw.githubusercontent.com/LeonardHM/diorama-ftbchunks/screenshots/screenshots/04-radar-text-size.png)
 
 Radar tab: a separate size for the names shown on the radar.

@@ -1,3 +1,17 @@
+> ## Este é o fork do Leonardo (LeonardHM) — leia antes de baixar
+>
+> Fork do [SunkenInTime/diorama](https://github.com/SunkenInTime/diorama) com modificações próprias. O texto abaixo desta caixa é o README do projeto original.
+>
+> | Branch | O que é | Para quê |
+> |---|---|---|
+> | **`release/0.10.2-with-mods`** | Versão **0.10.2** do Diorama + todas as modificações (FTB Chunks, estilos de claim, linhas do minimapa, pt_br, correção do mapa web) | **É a que você baixa para jogar** (o jar sai como 0.10.2) |
+> | `feature/ftb-chunks-claims-0.10.2` | Só as modificações do FTB Chunks, em cima da `master` do projeto original (que ainda se chama 0.10.1) | Origem do pull request [#430](https://github.com/SunkenInTime/diorama/pull/430). Não use para jogar |
+> | `fix/web-map-dimension-tabs` | Só a correção das abas de dimensão do mapa web, em cima da `master` original | Para um pull request separado. Não use para jogar |
+> | `screenshots` | Imagens e legendas das modificações | Documentação do PR |
+> | `master` | Cópia da `master` do projeto original | Não mexer |
+>
+> Para compilar: `./gradlew :1.20.1-forge:build` (o projeto exige **JDK 25** no Gradle). O jar fica em `versions/1.20.1-forge/build/libs/`.
+
 <img src="assets/icon.png" width="64" height="64" alt="">
 
 # Diorama

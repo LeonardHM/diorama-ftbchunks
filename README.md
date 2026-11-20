@@ -1,5 +1,7 @@
 # Screenshots: FTB Chunks claiming, claim styles and radar text size
 
+This branch only holds screenshots of the changes in the [`release/0.10.2-with-mods`](https://github.com/LeonardHM/diorama-ftbchunks/tree/release/0.10.2-with-mods) branch.
+
 Taken on Minecraft 1.20.1 Forge, with FTB Chunks installed.
 
 ## 1. Claim style: Walls

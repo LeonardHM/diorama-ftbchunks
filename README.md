@@ -52,3 +52,12 @@ The claim line shows the owner of the chunk you stand in and whether it is force
 ![Radar text size](https://raw.githubusercontent.com/LeonardHM/diorama-ftbchunks/screenshots/screenshots/04-radar-text-size.png)
 
 Radar tab: a separate size for the names shown on the radar.
+
+## 8. Web map: dimension tabs
+![Web map tabs](https://raw.githubusercontent.com/LeonardHM/diorama-ftbchunks/screenshots/screenshots/10-web-map-dimension-tabs.png)
+
+With many dimensions the tabs scroll sideways (scrollbar under the tabs; mouse wheel works too) instead of being cut off.
+
+![Empty dimension](https://raw.githubusercontent.com/LeonardHM/diorama-ftbchunks/screenshots/screenshots/11-web-map-empty-dimension.png)
+
+A dimension with nothing mapped yet shows its message, and the tabs stay clickable so another dimension can be picked.
